@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Broadcaster</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+    }
+    
+    h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 30px;
+    }
+    
+    .status-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+    }
+    
+    .listeners {
+      text-align: center;
+    }
+    
+    .listener-count {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .listener-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #666;
+      transition: background 0.3s;
+    }
+    
+    .status-dot.connected {
+      background: #00ff88;
+      box-shadow: 0 0 10px #00ff88;
+    }
+    
+    .status-dot.streaming {
+      background: #00d2ff;
+      box-shadow: 0 0 10px #00d2ff;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .play-button {
+      width: 100%;
+      padding: 18px 30px;
+      font-size: 18px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    
+    .play-button.start {
+      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+      color: white;
+    }
+    
+    .play-button.stop {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+    }
+    
+    .play-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
+    }
+    
+    .play-button:active {
+      transform: translateY(0);
+    }
+    
+    .play-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .visualizer {
+      margin: 30px 0;
+      height: 60px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 4px;
+    }
+    
+    .bar {
+      width: 8px;
+      background: linear-gradient(to top, #00d2ff, #3a7bd5);
+      border-radius: 4px;
+      transition: height 0.1s;
+      height: 10px;
+    }
+    
+    .volume-control {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .volume-control label {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .volume-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      outline: none;
+    }
+    
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #00d2ff;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .volume-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    
+    .info {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .info a {
+      color: #00d2ff;
+      text-decoration: none;
+    }
+    
+    .error-message {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+    
+    .error-message.visible {
+      display: block;
+    }
+    
+    .latency {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 10px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>🎙️ Audio Broadcast</h1>
+      <p class="subtitle">Real-time audio streaming</p>
+      
+      <div class="error-message" id="error"></div>
+      
+      <div class="status-section">
+        <div class="listeners">
+          <div class="listener-count" id="listenerCount">0</div>
+          <div class="listener-label">Listeners</div>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Disconnected</span>
+        </div>
+      </div>
+      
+      <div class="visualizer" id="visualizer">
+        <!-- Bars will be added by JavaScript -->
+      </div>
+      
+      <button class="play-button start" id="playButton" onclick="toggleAudio()">
+        <span id="playIcon">▶</span>
+        <span id="playText">Start Listening</span>
+      </button>
+      
+      <div class="volume-control">
+        <label>🔊</label>
+        <input type="range" class="volume-slider" id="volume" min="0" max="100" value="80" onchange="setVolume(this.value)">
+        <span id="volumeValue">80%</span>
+      </div>
+      
+      <div class="latency" id="latency"></div>
+      
+      <div class="info">
+        <p>Share this page URL with others to let them listen to your broadcast.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let ws = null;
+    let mediaSource = null;
+    let sourceBuffer = null;
+    let audioElement = null;
+    let audioContext = null;
+    let analyser = null;
+    let isPlaying = false;
+    let queue = [];
+    let isUpdating = false;
+    
+    // DOM elements
+    const playButton = document.getElementById('playButton');
+    const playIcon = document.getElementById('playIcon');
+    const playText = document.getElementById('playText');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const listenerCount = document.getElementById('listenerCount');
+    const visualizer = document.getElementById('visualizer');
+    const volumeSlider = document.getElementById('volume');
+    const volumeValue = document.getElementById('volumeValue');
+    const errorEl = document.getElementById('error');
+    const latencyEl = document.getElementById('latency');
+    
+    // Create visualizer bars
+    for (let i = 0; i < 20; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      visualizer.appendChild(bar);
+    }
+    
+    const bars = visualizer.querySelectorAll('.bar');
+    
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.add('visible');
+    }
+    
+    function hideError() {
+      errorEl.classList.remove('visible');
+    }
+    
+    function updateStatus(status, isConnected = false, isStreaming = false) {
+      statusText.textContent = status;
+      statusDot.classList.toggle('connected', isConnected);
+      statusDot.classList.toggle('streaming', isStreaming);
+    }
+    
+    function setVolume(value) {
+      volumeValue.textContent = value + '%';
+      if (audioElement) {
+        audioElement.volume = value / 100;
+      }
+    }
+    
+    function updateVisualizer() {
+      if (!analyser || !isPlaying) {
+        bars.forEach(bar => bar.style.height = '10px');
+        return;
+      }
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      
+      const step = Math.floor(dataArray.length / bars.length);
+      
+      bars.forEach((bar, i) => {
+        const value = dataArray[i * step];
+        const height = Math.max(10, (value / 255) * 60);
+        bar.style.height = height + 'px';
+      });
+      
+      requestAnimationFrame(updateVisualizer);
+    }
+    
+    async function toggleAudio() {
+      if (isPlaying) {
+        stopAudio();
+      } else {
+        await startAudio();
+      }
+    }
+    
+    async function startAudio() {
+      hideError();
+      playButton.disabled = true;
+      updateStatus('Connecting...');
+      
+      try {
+        // Create audio context for visualization
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        
+        // Create audio element
+        audioElement = new Audio();
+        audioElement.volume = volumeSlider.value / 100;
+        
+        // Create MediaSource for streaming
+        mediaSource = new MediaSource();
+        audioElement.src = URL.createObjectURL(mediaSource);
+        
+        await new Promise((resolve, reject) => {
+          mediaSource.addEventListener('sourceopen', resolve, { once: true });
+          mediaSource.addEventListener('error', reject, { once: true });
+        });
+        
+        // Add source buffer for WebM/Opus
+        sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
+        sourceBuffer.mode = 'sequence';
+        
+        sourceBuffer.addEventListener('updateend', processQueue);
+        sourceBuffer.addEventListener('error', (e) => {
+          console.error('SourceBuffer error:', e);
+        });
+        
+        // Connect to WebSocket
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}`);
+        ws.binaryType = 'arraybuffer';
+        
+        ws.onopen = () => {
+          updateStatus('Connected', true, false);
+          console.log('WebSocket connected');
+        };
+        
+        ws.onmessage = (event) => {
+          // Check if it's a JSON message (listener count update)
+          if (typeof event.data === 'string' || event.data instanceof String) {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.type === 'listeners') {
+                listenerCount.textContent = data.count;
+              }
+            } catch (e) {
+              // Not JSON, ignore
+            }
+            return;
+          }
+          
+          // Binary audio data
+          if (event.data instanceof ArrayBuffer && event.data.byteLength > 0) {
+            queue.push(event.data);
+            processQueue();
+            
+            if (!isPlaying) {
+              isPlaying = true;
+              updateStatus('Streaming', true, true);
+              playButton.disabled = false;
+              playButton.className = 'play-button stop';
+              playIcon.textContent = '⏹';
+              playText.textContent = 'Stop Listening';
+              
+              // Start playback
+              audioElement.play().catch(e => {
+                console.error('Playback error:', e);
+                showError('Playback failed. Try clicking the button again.');
+              });
+              
+              // Connect for visualization
+              const source = audioContext.createMediaElementSource(audioElement);
+              source.connect(analyser);
+              analyser.connect(audioContext.destination);
+              
+              updateVisualizer();
+            }
+          }
+        };
+        
+        ws.onclose = () => {
+          updateStatus('Disconnected');
+          console.log('WebSocket closed');
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          showError('Connection failed. Make sure the server is running.');
+          stopAudio();
+        };
+        
+      } catch (error) {
+        console.error('Start error:', error);
+        showError('Failed to start: ' + error.message);
+        stopAudio();
+      }
+    }
+    
+    function processQueue() {
+      if (isUpdating || queue.length === 0 || !sourceBuffer) {
+        return;
+      }
+      
+      if (sourceBuffer.updating) {
+        return;
+      }
+      
+      isUpdating = true;
+      
+      try {
+        const data = queue.shift();
+        sourceBuffer.appendBuffer(data);
+      } catch (error) {
+        console.error('Buffer append error:', error);
+        // If buffer is full, try to remove old data
+        if (error.name === 'QuotaExceededError') {
+          try {
+            const removeEnd = sourceBuffer.buffered.length > 0 
+              ? sourceBuffer.buffered.start(0) + 10 
+              : 10;
+            sourceBuffer.remove(0, removeEnd);
+          } catch (e) {
+            console.error('Remove error:', e);
+          }
+        }
+      }
+      
+      isUpdating = false;
+    }
+    
+    function stopAudio() {
+      isPlaying = false;
+      
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.src = '';
+        audioElement = null;
+      }
+      
+      if (mediaSource && mediaSource.readyState === 'open') {
+        try {
+          mediaSource.endOfStream();
+        } catch (e) {
+          // Ignore
+        }
+      }
+      
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+        analyser = null;
+      }
+      
+      sourceBuffer = null;
+      mediaSource = null;
+      queue = [];
+      isUpdating = false;
+      
+      updateStatus('Disconnected');
+      playButton.disabled = false;
+      playButton.className = 'play-button start';
+      playIcon.textContent = '▶';
+      playText.textContent = 'Start Listening';
+      
+      bars.forEach(bar => bar.style.height = '10px');
+    }
+    
+    // Fetch initial status
+    fetch('/api/status')
+      .then(r => r.json())
+      .then(data => {
+        listenerCount.textContent = data.listeners;
+      })
+      .catch(() => {});
+    
+    // Poll for listener count updates when not connected
+    setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        fetch('/api/status')
+          .then(r => r.json())
+          .then(data => {
+            listenerCount.textContent = data.listeners;
+          })
+          .catch(() => {});
+      }
+    }, 5000);
+  </script>
+</body>
+</html>
