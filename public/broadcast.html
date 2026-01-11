@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Broadcaster - Broadcast</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .page-layout {
+      display: flex;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      min-height: calc(100vh - 40px);
+    }
+
+    .main-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .sidebar {
+      width: 300px;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .card-header h1 {
+      font-size: 24px;
+    }
+
+    .card-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+    }
+
+    /* Header card */
+    .header-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .header-left h1 {
+      font-size: 24px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 20px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected {
+      background: #00ff88;
+      box-shadow: 0 0 10px #00ff88;
+    }
+
+    .status-dot.broadcasting {
+      background: #ff6b6b;
+      box-shadow: 0 0 10px #ff6b6b;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .error-message {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .error-message.visible {
+      display: block;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-item {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 5px;
+    }
+
+    /* Source selection */
+    .section-label {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 12px;
+    }
+
+    .device-select {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      cursor: pointer;
+      display: none;
+    }
+
+    .device-select.visible {
+      display: block;
+    }
+
+    .device-select option {
+      background: #1a1a2e;
+      color: #fff;
+    }
+
+    /* Visualizer */
+    .visualizer {
+      height: 80px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 3px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .bar {
+      width: 6px;
+      background: linear-gradient(to top, #ff6b6b, #ee5a5a);
+      border-radius: 3px;
+      transition: height 0.1s;
+      height: 10px;
+    }
+
+    /* Broadcast button */
+    .broadcast-button {
+      width: 100%;
+      padding: 18px 30px;
+      font-size: 18px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .broadcast-button.start {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+    }
+
+    .broadcast-button.stop {
+      background: linear-gradient(135deg, #666 0%, #555 100%);
+      color: white;
+    }
+
+    .broadcast-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+    }
+
+    .broadcast-button:active {
+      transform: translateY(0);
+    }
+
+    .broadcast-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Share link */
+    .share-section {
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      display: none;
+    }
+
+    .share-section.visible {
+      display: block;
+    }
+
+    .share-section label {
+      display: block;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+    }
+
+    .share-section input {
+      width: 100%;
+      padding: 10px;
+      font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+    }
+
+    /* Sidebar - Listeners */
+    .sidebar .card {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .listener-count-display {
+      text-align: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .listener-count-number {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .listener-count-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .listeners-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .listeners-list-header {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .listener-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.2);
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+
+    .listener-avatar {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .listener-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .no-listeners {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      font-style: italic;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .info {
+      margin-top: auto;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .info a {
+      color: #ff6b6b;
+      text-decoration: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .page-layout {
+        flex-direction: column;
+      }
+
+      .sidebar {
+        width: 100%;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 500px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header-card {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <!-- Main Panel -->
+    <div class="main-panel">
+      <!-- Header -->
+      <div class="card header-card">
+        <div class="header-left">
+          <h1>Broadcast Audio</h1>
+          <span class="subtitle">Share your audio with listeners</span>
+        </div>
+        <div class="status-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Not Broadcasting</span>
+        </div>
+      </div>
+
+      <!-- Stats & Settings -->
+      <div class="card">
+        <div class="error-message" id="error"></div>
+
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value" id="listenerCount">0</div>
+            <div class="stat-label">Listeners</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="duration">0:00</div>
+            <div class="stat-label">Duration</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="bitrate">--</div>
+            <div class="stat-label">Bitrate</div>
+          </div>
+        </div>
+
+        <div class="section-label">Audio Source</div>
+        <select class="device-select visible" id="deviceSelect">
+          <option value="">Select microphone...</option>
+        </select>
+
+        <div class="visualizer" id="visualizer"></div>
+
+        <button class="broadcast-button start" id="broadcastButton" onclick="toggleBroadcast()">
+          <span id="broadcastIcon">📡</span>
+          <span id="broadcastText">Start Broadcasting</span>
+        </button>
+
+        <div class="share-section" id="shareSection">
+          <label>Share this link with listeners:</label>
+          <input type="text" id="listenerUrl" readonly onclick="this.select()">
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar - Connected Listeners -->
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-header">
+          <h2>Connected Listeners</h2>
+        </div>
+
+        <div class="listener-count-display">
+          <div class="listener-count-number" id="sidebarListenerCount">0</div>
+          <div class="listener-count-label">Online</div>
+        </div>
+
+        <div class="listeners-list" id="listenersList">
+          <div class="listeners-list-header">Active Connections</div>
+          <div id="listenerNames">
+            <div class="no-listeners">No listeners connected yet</div>
+          </div>
+        </div>
+
+        <div class="info">
+          <p>Listeners join at <a href="/" id="listenerAnchor">/</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let ws = null;
+    let localStream = null;
+    let peerConnections = new Map(); // listenerId -> RTCPeerConnection
+    let audioContext = null;
+    let analyser = null;
+    let isBroadcasting = false;
+    let selectedDeviceId = null;
+    let broadcastStartTime = null;
+    let durationInterval = null;
+
+    // DOM elements
+    const broadcastButton = document.getElementById('broadcastButton');
+    const broadcastIcon = document.getElementById('broadcastIcon');
+    const broadcastText = document.getElementById('broadcastText');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const listenerCount = document.getElementById('listenerCount');
+    const sidebarListenerCount = document.getElementById('sidebarListenerCount');
+    const visualizer = document.getElementById('visualizer');
+    const errorEl = document.getElementById('error');
+    const deviceSelect = document.getElementById('deviceSelect');
+    const shareSection = document.getElementById('shareSection');
+    const listenerUrl = document.getElementById('listenerUrl');
+    const listenerAnchor = document.getElementById('listenerAnchor');
+    const listenerNamesEl = document.getElementById('listenerNames');
+    const durationEl = document.getElementById('duration');
+    const bitrateEl = document.getElementById('bitrate');
+
+    // Set listener URL
+    const baseUrl = window.location.origin;
+    listenerUrl.value = baseUrl;
+    listenerAnchor.href = baseUrl;
+
+    // Create visualizer bars
+    for (let i = 0; i < 30; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      visualizer.appendChild(bar);
+    }
+    const bars = visualizer.querySelectorAll('.bar');
+
+    // Load available microphones
+    async function loadMicrophones() {
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const mics = devices.filter(d => d.kind === 'audioinput');
+
+        deviceSelect.innerHTML = '<option value="">Select microphone...</option>';
+        mics.forEach(mic => {
+          const option = document.createElement('option');
+          option.value = mic.deviceId;
+          option.textContent = mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`;
+          deviceSelect.appendChild(option);
+        });
+
+        // Try to restore saved device, otherwise use first available
+        const savedDeviceId = localStorage.getItem('selectedMicrophoneId');
+        const savedDeviceExists = savedDeviceId && mics.some(m => m.deviceId === savedDeviceId);
+
+        if (savedDeviceExists) {
+          deviceSelect.value = savedDeviceId;
+          selectedDeviceId = savedDeviceId;
+        } else if (mics.length > 0) {
+          deviceSelect.value = mics[0].deviceId;
+          selectedDeviceId = mics[0].deviceId;
+        }
+      } catch (e) {
+        console.log('Could not enumerate devices:', e);
+      }
+    }
+
+    deviceSelect.onchange = () => {
+      selectedDeviceId = deviceSelect.value;
+      // Save selection to localStorage
+      if (selectedDeviceId) {
+        localStorage.setItem('selectedMicrophoneId', selectedDeviceId);
+      }
+    };
+
+    // Load microphones on page load
+    loadMicrophones();
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.add('visible');
+    }
+
+    function hideError() {
+      errorEl.classList.remove('visible');
+    }
+
+    function updateListenerNames(list) {
+      if (!list || list.length === 0) {
+        listenerNamesEl.innerHTML = '<div class="no-listeners">No listeners connected yet</div>';
+      } else {
+        listenerNamesEl.innerHTML = list.map(l => {
+          const initial = l.name.charAt(0).toUpperCase();
+          return `<div class="listener-item">
+            <div class="listener-avatar">${escapeHtml(initial)}</div>
+            <div class="listener-name">${escapeHtml(l.name)}</div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function updateStatus(status, isConnected = false, broadcasting = false) {
+      statusText.textContent = status;
+      statusDot.classList.toggle('connected', isConnected && !broadcasting);
+      statusDot.classList.toggle('broadcasting', broadcasting);
+    }
+
+    function formatDuration(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateDuration() {
+      if (broadcastStartTime) {
+        const elapsed = Math.floor((Date.now() - broadcastStartTime) / 1000);
+        durationEl.textContent = formatDuration(elapsed);
+      }
+    }
+
+    function updateVisualizer() {
+      if (!analyser || !isBroadcasting) {
+        bars.forEach(bar => bar.style.height = '10px');
+        return;
+      }
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+
+      const step = Math.floor(dataArray.length / bars.length);
+
+      bars.forEach((bar, i) => {
+        const value = dataArray[i * step];
+        const height = Math.max(10, (value / 255) * 60);
+        bar.style.height = height + 'px';
+      });
+
+      requestAnimationFrame(updateVisualizer);
+    }
+
+    async function getAudioStream() {
+      const constraints = {
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+      };
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    }
+
+    async function toggleBroadcast() {
+      if (isBroadcasting) {
+        stopBroadcast();
+      } else {
+        await startBroadcast();
+      }
+    }
+
+    async function startBroadcast() {
+      hideError();
+      broadcastButton.disabled = true;
+      updateStatus('Starting...');
+
+      try {
+        localStream = await getAudioStream();
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+
+        const source = audioContext.createMediaStreamSource(localStream);
+        source.connect(analyser);
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+        ws.onopen = () => {
+          updateStatus('Connected', true, false);
+          ws.send(JSON.stringify({ type: 'register-broadcaster' }));
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            await handleSignalingMessage(data);
+          } catch (e) {
+            console.error('Error handling message:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket closed');
+          if (isBroadcasting) {
+            stopBroadcast();
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          showError('Connection failed. Make sure the server is running.');
+          stopBroadcast();
+        };
+
+      } catch (error) {
+        console.error('Start broadcast error:', error);
+        showError('Failed to start: ' + error.message);
+        stopBroadcast();
+      }
+    }
+
+    async function handleSignalingMessage(data) {
+      switch (data.type) {
+        case 'broadcaster-registered':
+          isBroadcasting = true;
+          broadcastStartTime = Date.now();
+          durationInterval = setInterval(updateDuration, 1000);
+          bitrateEl.textContent = '128k';
+          updateStatus('Broadcasting', true, true);
+          broadcastButton.disabled = false;
+          broadcastButton.className = 'broadcast-button stop';
+          broadcastIcon.textContent = '⏹';
+          broadcastText.textContent = 'Stop Broadcasting';
+          shareSection.classList.add('visible');
+          updateVisualizer();
+          break;
+
+        case 'broadcaster-rejected':
+          showError('Another broadcaster is already active.');
+          stopBroadcast();
+          break;
+
+        case 'listener-joined':
+          await createPeerConnectionForListener(data.listenerId);
+          break;
+
+        case 'listener-left':
+          const pc = peerConnections.get(data.listenerId);
+          if (pc) {
+            if (pc.clonedStream) {
+              pc.clonedStream.getTracks().forEach(t => t.stop());
+            }
+            pc.close();
+            peerConnections.delete(data.listenerId);
+          }
+          break;
+
+        case 'answer':
+          const peerConn = peerConnections.get(data.listenerId);
+          if (peerConn) {
+            await peerConn.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          }
+          break;
+
+        case 'ice-candidate':
+          const pc2 = peerConnections.get(data.listenerId);
+          if (pc2 && data.candidate) {
+            try {
+              await pc2.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('Error adding ICE candidate:', e);
+            }
+          }
+          break;
+
+        case 'listeners':
+          listenerCount.textContent = data.count;
+          sidebarListenerCount.textContent = data.count;
+          if (data.list) {
+            updateListenerNames(data.list);
+          }
+          break;
+      }
+    }
+
+    async function createPeerConnectionForListener(listenerId) {
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      peerConnections.set(listenerId, pc);
+
+      const clonedStream = new MediaStream();
+      localStream.getAudioTracks().forEach(track => {
+        const clonedTrack = track.clone();
+        clonedStream.addTrack(clonedTrack);
+        pc.addTrack(clonedTrack, clonedStream);
+      });
+
+      pc.clonedStream = clonedStream;
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            listenerId: listenerId,
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`Listener ${listenerId} connection state: ${pc.connectionState}`);
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          peerConnections.delete(listenerId);
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.send(JSON.stringify({
+        type: 'offer',
+        listenerId: listenerId,
+        sdp: pc.localDescription
+      }));
+    }
+
+    function stopBroadcast() {
+      isBroadcasting = false;
+      broadcastStartTime = null;
+
+      if (durationInterval) {
+        clearInterval(durationInterval);
+        durationInterval = null;
+      }
+
+      peerConnections.forEach(pc => {
+        if (pc.clonedStream) {
+          pc.clonedStream.getTracks().forEach(t => t.stop());
+        }
+        pc.close();
+      });
+      peerConnections.clear();
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+        analyser = null;
+      }
+
+      updateStatus('Not Broadcasting');
+      broadcastButton.disabled = false;
+      broadcastButton.className = 'broadcast-button start';
+      broadcastIcon.textContent = '📡';
+      broadcastText.textContent = 'Start Broadcasting';
+      shareSection.classList.remove('visible');
+      durationEl.textContent = '0:00';
+      bitrateEl.textContent = '--';
+      updateListenerNames([]);
+
+      bars.forEach(bar => bar.style.height = '10px');
+    }
+
+    // Initial status fetch
+    fetch('/api/status')
+      .then(r => r.json())
+      .then(data => {
+        listenerCount.textContent = data.listeners || 0;
+        sidebarListenerCount.textContent = data.listeners || 0;
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio Broadcaster</title>
+  <title>Audio Broadcaster - Listen</title>
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
-    
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -22,12 +22,12 @@
       justify-content: center;
       padding: 20px;
     }
-    
+
     .container {
       max-width: 500px;
       width: 100%;
     }
-    
+
     .card {
       background: rgba(255, 255, 255, 0.05);
       backdrop-filter: blur(10px);
@@ -36,56 +36,42 @@
       border: 1px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
     }
-    
+
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
     h1 {
       font-size: 28px;
-      margin-bottom: 10px;
+      margin-bottom: 0;
       display: flex;
       align-items: center;
       gap: 12px;
     }
-    
+
     .subtitle {
       color: rgba(255, 255, 255, 0.6);
       margin-bottom: 30px;
     }
-    
+
     .status-section {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      margin-bottom: 30px;
-      padding: 20px;
+      padding: 8px 12px;
       background: rgba(0, 0, 0, 0.2);
-      border-radius: 12px;
-    }
-    
-    .listeners {
-      text-align: center;
-    }
-    
-    .listener-count {
-      font-size: 48px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    
-    .listener-label {
-      color: rgba(255, 255, 255, 0.6);
+      border-radius: 8px;
       font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
     }
-    
+
     .status-indicator {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    
+
     .status-dot {
       width: 12px;
       height: 12px;
@@ -93,23 +79,29 @@
       background: #666;
       transition: background 0.3s;
     }
-    
+
     .status-dot.connected {
       background: #00ff88;
       box-shadow: 0 0 10px #00ff88;
     }
-    
+
     .status-dot.streaming {
       background: #00d2ff;
       box-shadow: 0 0 10px #00d2ff;
       animation: pulse 2s infinite;
     }
-    
+
+    .status-dot.waiting {
+      background: #ffaa00;
+      box-shadow: 0 0 10px #ffaa00;
+      animation: pulse 2s infinite;
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
     }
-    
+
     .play-button {
       width: 100%;
       padding: 18px 30px;
@@ -124,32 +116,32 @@
       justify-content: center;
       gap: 10px;
     }
-    
+
     .play-button.start {
       background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
       color: white;
     }
-    
+
     .play-button.stop {
       background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
       color: white;
     }
-    
+
     .play-button:hover {
       transform: translateY(-2px);
       box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
     }
-    
+
     .play-button:active {
       transform: translateY(0);
     }
-    
+
     .play-button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
       transform: none;
     }
-    
+
     .visualizer {
       margin: 30px 0;
       height: 60px;
@@ -158,7 +150,7 @@
       justify-content: center;
       gap: 4px;
     }
-    
+
     .bar {
       width: 8px;
       background: linear-gradient(to top, #00d2ff, #3a7bd5);
@@ -166,44 +158,7 @@
       transition: height 0.1s;
       height: 10px;
     }
-    
-    .volume-control {
-      margin-top: 20px;
-      display: flex;
-      align-items: center;
-      gap: 15px;
-    }
-    
-    .volume-control label {
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.7);
-    }
-    
-    .volume-slider {
-      flex: 1;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
-      outline: none;
-    }
-    
-    .volume-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 18px;
-      height: 18px;
-      background: #00d2ff;
-      border-radius: 50%;
-      cursor: pointer;
-      transition: transform 0.2s;
-    }
-    
-    .volume-slider::-webkit-slider-thumb:hover {
-      transform: scale(1.2);
-    }
-    
+
     .info {
       margin-top: 30px;
       padding-top: 20px;
@@ -211,12 +166,12 @@
       font-size: 13px;
       color: rgba(255, 255, 255, 0.5);
     }
-    
+
     .info a {
       color: #00d2ff;
       text-decoration: none;
     }
-    
+
     .error-message {
       background: rgba(255, 107, 107, 0.2);
       border: 1px solid rgba(255, 107, 107, 0.3);
@@ -226,137 +181,234 @@
       font-size: 14px;
       display: none;
     }
-    
+
     .error-message.visible {
       display: block;
     }
-    
-    .latency {
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.4);
-      margin-top: 10px;
+
+    .name-prompt {
       text-align: center;
+    }
+
+    .name-prompt h2 {
+      font-size: 20px;
+      margin-bottom: 20px;
+    }
+
+    .name-input {
+      width: 100%;
+      padding: 15px;
+      font-size: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .name-input:focus {
+      outline: none;
+      border-color: #00d2ff;
+    }
+
+    .name-input::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .name-button {
+      width: 100%;
+      padding: 15px 30px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+      color: white;
+      transition: all 0.3s;
+    }
+
+    .name-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 210, 255, 0.3);
+    }
+
+    .name-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .listener-content {
+      display: none;
+    }
+
+    .listener-content.visible {
+      display: block;
+    }
+
+    .warning-message {
+      background: rgba(255, 170, 0, 0.2);
+      border: 1px solid rgba(255, 170, 0, 0.3);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .warning-message.visible {
+      display: block;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <h1>🎙️ Audio Broadcast</h1>
+      <div class="header-row">
+        <h1>🎧 Audio Broadcast</h1>
+        <div class="status-section" id="statusSection">
+          <div class="status-indicator">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Disconnected</span>
+          </div>
+        </div>
+      </div>
       <p class="subtitle">Real-time audio streaming</p>
-      
+
       <div class="error-message" id="error"></div>
-      
-      <div class="status-section">
-        <div class="listeners">
-          <div class="listener-count" id="listenerCount">0</div>
-          <div class="listener-label">Listeners</div>
-        </div>
-        <div class="status-indicator">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">Disconnected</span>
-        </div>
+      <div class="warning-message" id="warning"></div>
+
+      <!-- Name prompt section -->
+      <div class="name-prompt" id="namePrompt">
+        <h2>Enter your name to join</h2>
+        <input type="text" class="name-input" id="nameInput" placeholder="Your name" maxlength="30" autocomplete="off">
+        <button class="name-button" id="joinButton" onclick="joinWithName()">Join Broadcast</button>
       </div>
-      
-      <div class="visualizer" id="visualizer">
-        <!-- Bars will be added by JavaScript -->
-      </div>
-      
+
+      <!-- Listener content (hidden until name entered) -->
+      <div class="listener-content" id="listenerContent">
+      <div class="visualizer" id="visualizer"></div>
+
       <button class="play-button start" id="playButton" onclick="toggleAudio()">
         <span id="playIcon">▶</span>
         <span id="playText">Start Listening</span>
       </button>
-      
-      <div class="volume-control">
-        <label>🔊</label>
-        <input type="range" class="volume-slider" id="volume" min="0" max="100" value="80" onchange="setVolume(this.value)">
-        <span id="volumeValue">80%</span>
-      </div>
-      
-      <div class="latency" id="latency"></div>
-      
-      <div class="info">
-        <p>Share this page URL with others to let them listen to your broadcast.</p>
-      </div>
+
+      <!-- <div class="info">
+      </div> -->
+      </div><!-- end listener-content -->
     </div>
   </div>
 
   <script>
     // State
     let ws = null;
-    let mediaSource = null;
-    let sourceBuffer = null;
+    let peerConnection = null;
     let audioElement = null;
     let audioContext = null;
     let analyser = null;
+    let mediaStreamSource = null;
     let isPlaying = false;
-    let queue = [];
-    let isUpdating = false;
-    
+    let listenerName = '';
+
     // DOM elements
     const playButton = document.getElementById('playButton');
     const playIcon = document.getElementById('playIcon');
     const playText = document.getElementById('playText');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const listenerCount = document.getElementById('listenerCount');
     const visualizer = document.getElementById('visualizer');
-    const volumeSlider = document.getElementById('volume');
-    const volumeValue = document.getElementById('volumeValue');
     const errorEl = document.getElementById('error');
-    const latencyEl = document.getElementById('latency');
-    
+    const warningEl = document.getElementById('warning');
+    const namePrompt = document.getElementById('namePrompt');
+    const nameInput = document.getElementById('nameInput');
+    const joinButton = document.getElementById('joinButton');
+    const listenerContent = document.getElementById('listenerContent');
+
     // Create visualizer bars
     for (let i = 0; i < 20; i++) {
       const bar = document.createElement('div');
       bar.className = 'bar';
       visualizer.appendChild(bar);
     }
-    
+
     const bars = visualizer.querySelectorAll('.bar');
-    
+
     function showError(message) {
       errorEl.textContent = message;
       errorEl.classList.add('visible');
+      warningEl.classList.remove('visible');
     }
-    
-    function hideError() {
+
+    function showWarning(message) {
+      warningEl.textContent = message;
+      warningEl.classList.add('visible');
       errorEl.classList.remove('visible');
     }
-    
-    function updateStatus(status, isConnected = false, isStreaming = false) {
-      statusText.textContent = status;
-      statusDot.classList.toggle('connected', isConnected);
-      statusDot.classList.toggle('streaming', isStreaming);
+
+    function hideMessages() {
+      errorEl.classList.remove('visible');
+      warningEl.classList.remove('visible');
     }
-    
-    function setVolume(value) {
-      volumeValue.textContent = value + '%';
-      if (audioElement) {
-        audioElement.volume = value / 100;
+
+    function joinWithName() {
+      const name = nameInput.value.trim();
+      if (!name) {
+        showError('Please enter your name');
+        return;
       }
+      listenerName = name;
+      // Save name to localStorage
+      localStorage.setItem('listenerName', name);
+      namePrompt.style.display = 'none';
+      listenerContent.classList.add('visible');
+      // Start connecting immediately
+      startAudio();
     }
-    
+
+    // Allow Enter key to submit name
+    nameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        joinWithName();
+      }
+    });
+
+    // Pre-fill saved name from localStorage
+    const savedName = localStorage.getItem('listenerName');
+    if (savedName) {
+      nameInput.value = savedName;
+    }
+
+    function updateStatus(status, state = 'disconnected') {
+      statusText.textContent = status;
+      statusDot.classList.remove('connected', 'streaming', 'waiting');
+      if (state === 'connected') statusDot.classList.add('connected');
+      if (state === 'streaming') statusDot.classList.add('streaming');
+      if (state === 'waiting') statusDot.classList.add('waiting');
+    }
+
     function updateVisualizer() {
       if (!analyser || !isPlaying) {
         bars.forEach(bar => bar.style.height = '10px');
         return;
       }
-      
+
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       analyser.getByteFrequencyData(dataArray);
-      
+
       const step = Math.floor(dataArray.length / bars.length);
-      
+
       bars.forEach((bar, i) => {
         const value = dataArray[i * step];
         const height = Math.max(10, (value / 255) * 60);
         bar.style.height = height + 'px';
       });
-      
+
       requestAnimationFrame(updateVisualizer);
     }
-    
+
     async function toggleAudio() {
       if (isPlaying) {
         stopAudio();
@@ -364,204 +416,216 @@
         await startAudio();
       }
     }
-    
+
     async function startAudio() {
-      hideError();
+      hideMessages();
       playButton.disabled = true;
-      updateStatus('Connecting...');
-      
+      updateStatus('Connecting...', 'waiting');
+
       try {
         // Create audio context for visualization
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
-        
-        // Create audio element
-        audioElement = new Audio();
-        audioElement.volume = volumeSlider.value / 100;
-        
-        // Create MediaSource for streaming
-        mediaSource = new MediaSource();
-        audioElement.src = URL.createObjectURL(mediaSource);
-        
-        await new Promise((resolve, reject) => {
-          mediaSource.addEventListener('sourceopen', resolve, { once: true });
-          mediaSource.addEventListener('error', reject, { once: true });
-        });
-        
-        // Add source buffer for WebM/Opus
-        sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
-        sourceBuffer.mode = 'sequence';
-        
-        sourceBuffer.addEventListener('updateend', processQueue);
-        sourceBuffer.addEventListener('error', (e) => {
-          console.error('SourceBuffer error:', e);
-        });
-        
-        // Connect to WebSocket
+
+        // Connect to WebSocket for signaling
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${window.location.host}`);
-        ws.binaryType = 'arraybuffer';
-        
+
         ws.onopen = () => {
-          updateStatus('Connected', true, false);
-          console.log('WebSocket connected');
+          updateStatus('Connected', 'connected');
+          // Request to listen with name
+          ws.send(JSON.stringify({ type: 'request-offer', name: listenerName }));
         };
-        
-        ws.onmessage = (event) => {
-          // Check if it's a JSON message (listener count update)
-          if (typeof event.data === 'string' || event.data instanceof String) {
-            try {
-              const data = JSON.parse(event.data);
-              if (data.type === 'listeners') {
-                listenerCount.textContent = data.count;
-              }
-            } catch (e) {
-              // Not JSON, ignore
+
+        ws.onmessage = async (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            switch (data.type) {
+              case 'offer':
+                await handleOffer(data.sdp);
+                break;
+
+              case 'ice-candidate':
+                await handleIceCandidate(data.candidate);
+                break;
+
+              case 'no-broadcaster':
+                showWarning('No broadcaster is currently streaming. Please wait for someone to start broadcasting.');
+                updateStatus('Waiting for broadcaster', 'waiting');
+                playButton.disabled = false;
+                break;
+
+              case 'broadcast-ended':
+                showWarning('The broadcast has ended.');
+                stopAudio();
+                break;
             }
-            return;
-          }
-          
-          // Binary audio data
-          if (event.data instanceof ArrayBuffer && event.data.byteLength > 0) {
-            queue.push(event.data);
-            processQueue();
-            
-            if (!isPlaying) {
-              isPlaying = true;
-              updateStatus('Streaming', true, true);
-              playButton.disabled = false;
-              playButton.className = 'play-button stop';
-              playIcon.textContent = '⏹';
-              playText.textContent = 'Stop Listening';
-              
-              // Start playback
-              audioElement.play().catch(e => {
-                console.error('Playback error:', e);
-                showError('Playback failed. Try clicking the button again.');
-              });
-              
-              // Connect for visualization
-              const source = audioContext.createMediaElementSource(audioElement);
-              source.connect(analyser);
-              analyser.connect(audioContext.destination);
-              
-              updateVisualizer();
-            }
+          } catch (e) {
+            console.error('Error parsing message:', e);
           }
         };
-        
+
         ws.onclose = () => {
           updateStatus('Disconnected');
           console.log('WebSocket closed');
         };
-        
+
         ws.onerror = (error) => {
           console.error('WebSocket error:', error);
           showError('Connection failed. Make sure the server is running.');
           stopAudio();
         };
-        
+
       } catch (error) {
         console.error('Start error:', error);
         showError('Failed to start: ' + error.message);
         stopAudio();
       }
     }
-    
-    function processQueue() {
-      if (isUpdating || queue.length === 0 || !sourceBuffer) {
-        return;
-      }
-      
-      if (sourceBuffer.updating) {
-        return;
-      }
-      
-      isUpdating = true;
-      
-      try {
-        const data = queue.shift();
-        sourceBuffer.appendBuffer(data);
-      } catch (error) {
-        console.error('Buffer append error:', error);
-        // If buffer is full, try to remove old data
-        if (error.name === 'QuotaExceededError') {
-          try {
-            const removeEnd = sourceBuffer.buffered.length > 0 
-              ? sourceBuffer.buffered.start(0) + 10 
-              : 10;
-            sourceBuffer.remove(0, removeEnd);
-          } catch (e) {
-            console.error('Remove error:', e);
-          }
+
+    async function handleOffer(sdp) {
+      console.log('Received WebRTC offer');
+
+      // Create peer connection
+      peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      // Handle incoming audio track
+      peerConnection.ontrack = (event) => {
+        console.log('Received audio track');
+        const stream = event.streams[0];
+
+        // Create audio element for playback
+        audioElement = new Audio();
+        audioElement.srcObject = stream;
+        audioElement.volume = 1;
+
+        audioElement.play().then(() => {
+          isPlaying = true;
+          hideMessages();
+          updateStatus('Streaming', 'streaming');
+          playButton.disabled = false;
+          playButton.className = 'play-button stop';
+          playIcon.textContent = '\u23F9';
+          playText.textContent = 'Stop Listening';
+
+          // Connect stream for visualization
+          mediaStreamSource = audioContext.createMediaStreamSource(stream);
+          mediaStreamSource.connect(analyser);
+
+          updateVisualizer();
+        }).catch(e => {
+          console.error('Playback error:', e);
+          showError('Playback failed. Try clicking the button again.');
+          playButton.disabled = false;
+        });
+      };
+
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        switch (peerConnection.connectionState) {
+          case 'connected':
+            updateStatus('Streaming', 'streaming');
+            break;
+          case 'disconnected':
+            updateStatus('Reconnecting...', 'waiting');
+            break;
+          case 'failed':
+            showError('Connection failed. Try reconnecting.');
+            stopAudio();
+            break;
+        }
+      };
+
+      // Set remote description (offer from broadcaster)
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+
+      // Create and send answer
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      ws.send(JSON.stringify({
+        type: 'answer',
+        sdp: peerConnection.localDescription
+      }));
+
+      console.log('Sent WebRTC answer');
+    }
+
+    async function handleIceCandidate(candidate) {
+      if (peerConnection && candidate) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (error) {
+          console.error('Error adding ICE candidate:', error);
         }
       }
-      
-      isUpdating = false;
     }
-    
+
     function stopAudio() {
       isPlaying = false;
-      
+
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
       if (ws) {
         ws.close();
         ws = null;
       }
-      
+
       if (audioElement) {
         audioElement.pause();
-        audioElement.src = '';
+        audioElement.srcObject = null;
         audioElement = null;
       }
-      
-      if (mediaSource && mediaSource.readyState === 'open') {
-        try {
-          mediaSource.endOfStream();
-        } catch (e) {
-          // Ignore
-        }
+
+      if (mediaStreamSource) {
+        mediaStreamSource.disconnect();
+        mediaStreamSource = null;
       }
-      
+
       if (audioContext) {
         audioContext.close();
         audioContext = null;
         analyser = null;
       }
-      
-      sourceBuffer = null;
-      mediaSource = null;
-      queue = [];
-      isUpdating = false;
-      
+
       updateStatus('Disconnected');
       playButton.disabled = false;
       playButton.className = 'play-button start';
       playIcon.textContent = '▶';
       playText.textContent = 'Start Listening';
-      
+
       bars.forEach(bar => bar.style.height = '10px');
     }
-    
-    // Fetch initial status
+
+    // Fetch initial status to check if broadcaster is active
     fetch('/api/status')
       .then(r => r.json())
       .then(data => {
-        listenerCount.textContent = data.listeners;
+        if (!data.broadcasting) {
+          showWarning('No broadcaster is currently streaming.');
+        }
       })
       .catch(() => {});
-    
-    // Poll for listener count updates when not connected
-    setInterval(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        fetch('/api/status')
-          .then(r => r.json())
-          .then(data => {
-            listenerCount.textContent = data.listeners;
-          })
-          .catch(() => {});
-      }
-    }, 5000);
   </script>
 </body>
 </html>
