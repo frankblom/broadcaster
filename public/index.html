@@ -312,6 +312,10 @@
     let mediaStreamSource = null;
     let isPlaying = false;
     let listenerName = '';
+    let reconnectInterval = null;
+    let isReconnecting = false;
+    let intentionalStop = false;
+    const RECONNECT_DELAY = 3000; // 3 seconds
 
     // DOM elements
     const playButton = document.getElementById('playButton');
@@ -351,6 +355,45 @@
     function hideMessages() {
       errorEl.classList.remove('visible');
       warningEl.classList.remove('visible');
+    }
+
+    function startReconnecting() {
+      if (reconnectInterval) return; // Already reconnecting
+
+      isReconnecting = true;
+      showWarning('Broadcast ended. Waiting for broadcaster to return...');
+      updateStatus('Waiting', 'waiting');
+
+      // Update button to allow canceling reconnect
+      playButton.disabled = false;
+      playButton.className = 'play-button stop';
+      playIcon.textContent = '\u23F9';
+      playText.textContent = 'Stop Waiting';
+
+      reconnectInterval = setInterval(async () => {
+        try {
+          const response = await fetch('/api/status');
+          const data = await response.json();
+
+          if (data.broadcasting) {
+            // Broadcaster is back, reconnect
+            stopReconnecting();
+            hideMessages();
+            startAudio();
+          }
+        } catch (e) {
+          // Server might be down, keep trying
+          console.log('Reconnect check failed:', e);
+        }
+      }, RECONNECT_DELAY);
+    }
+
+    function stopReconnecting() {
+      if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+        reconnectInterval = null;
+      }
+      isReconnecting = false;
     }
 
     function joinWithName() {
@@ -410,14 +453,16 @@
     }
 
     async function toggleAudio() {
-      if (isPlaying) {
+      if (isPlaying || isReconnecting) {
         stopAudio();
+        hideMessages();
       } else {
         await startAudio();
       }
     }
 
     async function startAudio() {
+      intentionalStop = false;
       hideMessages();
       playButton.disabled = true;
       updateStatus('Connecting...', 'waiting');
@@ -452,14 +497,17 @@
                 break;
 
               case 'no-broadcaster':
-                showWarning('No broadcaster is currently streaming. Please wait for someone to start broadcasting.');
-                updateStatus('Waiting for broadcaster', 'waiting');
+                showWarning('No broadcaster is currently streaming. Waiting for broadcaster...');
+                updateStatus('Waiting', 'waiting');
                 playButton.disabled = false;
+                // Start polling for broadcaster
+                cleanupConnection();
+                startReconnecting();
                 break;
 
               case 'broadcast-ended':
-                showWarning('The broadcast has ended.');
-                stopAudio();
+                cleanupConnection();
+                startReconnecting();
                 break;
             }
           } catch (e) {
@@ -473,8 +521,9 @@
         };
 
         ws.onerror = (error) => {
+          if (intentionalStop) return;
           console.error('WebSocket error:', error);
-          showError('Connection failed. Make sure the server is running.');
+          showError('Connection failed: ' + error.message);
           stopAudio();
         };
 
@@ -496,6 +545,9 @@
         ]
       });
 
+      // Add transceiver for receive-only audio (helps iOS Safari)
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
       // Handle incoming audio track
       peerConnection.ontrack = (event) => {
         console.log('Received audio track');
@@ -505,6 +557,14 @@
         audioElement = new Audio();
         audioElement.srcObject = stream;
         audioElement.volume = 1;
+        // iOS Safari requirements
+        audioElement.setAttribute('playsinline', '');
+        audioElement.setAttribute('webkit-playsinline', '');
+
+        // Resume AudioContext if suspended (required for iOS Safari)
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
 
         audioElement.play().then(() => {
           isPlaying = true;
@@ -578,7 +638,8 @@
       }
     }
 
-    function stopAudio() {
+    // Cleanup connection without affecting reconnect state or UI fully
+    function cleanupConnection() {
       isPlaying = false;
 
       if (peerConnection) {
@@ -608,13 +669,19 @@
         analyser = null;
       }
 
+      bars.forEach(bar => bar.style.height = '10px');
+    }
+
+    function stopAudio() {
+      intentionalStop = true;
+      stopReconnecting();
+      cleanupConnection();
+
       updateStatus('Disconnected');
       playButton.disabled = false;
       playButton.className = 'play-button start';
       playIcon.textContent = '▶';
       playText.textContent = 'Start Listening';
-
-      bars.forEach(bar => bar.style.height = '10px');
     }
 
     // Fetch initial status to check if broadcaster is active

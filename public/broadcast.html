@@ -69,38 +69,13 @@
       font-size: 14px;
     }
 
-    /* Header card */
-    .header-card {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-    }
-
-    .header-left h1 {
-      font-size: 24px;
-    }
-
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 20px;
-    }
-
     .status-dot {
-      width: 10px;
-      height: 10px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
       background: #666;
       transition: background 0.3s;
+      display: inline-block;
     }
 
     .status-dot.connected {
@@ -182,6 +157,7 @@
       color: #fff;
       cursor: pointer;
       display: none;
+      margin-bottom: 20px;
     }
 
     .device-select.visible {
@@ -253,36 +229,6 @@
       opacity: 0.5;
       cursor: not-allowed;
       transform: none;
-    }
-
-    /* Share link */
-    .share-section {
-      margin-top: 20px;
-      padding: 15px;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 12px;
-      display: none;
-    }
-
-    .share-section.visible {
-      display: block;
-    }
-
-    .share-section label {
-      display: block;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-bottom: 8px;
-    }
-
-    .share-section input {
-      width: 100%;
-      padding: 10px;
-      font-size: 13px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.3);
-      color: #fff;
     }
 
     /* Sidebar - Listeners */
@@ -397,12 +343,6 @@
       .stats-grid {
         grid-template-columns: 1fr;
       }
-
-      .header-card {
-        flex-direction: column;
-        gap: 15px;
-        text-align: center;
-      }
     }
   </style>
 </head>
@@ -410,26 +350,16 @@
   <div class="page-layout">
     <!-- Main Panel -->
     <div class="main-panel">
-      <!-- Header -->
-      <div class="card header-card">
-        <div class="header-left">
-          <h1>Broadcast Audio</h1>
-          <span class="subtitle">Share your audio with listeners</span>
-        </div>
-        <div class="status-indicator">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">Not Broadcasting</span>
-        </div>
-      </div>
-
       <!-- Stats & Settings -->
       <div class="card">
         <div class="error-message" id="error"></div>
 
         <div class="stats-grid">
           <div class="stat-item">
-            <div class="stat-value" id="listenerCount">0</div>
-            <div class="stat-label">Listeners</div>
+            <div class="stat-value">
+              <span class="status-dot" id="statusDot"></span>
+            </div>
+            <div class="stat-label" id="statusText">Not Broadcasting</div>
           </div>
           <div class="stat-item">
             <div class="stat-value" id="duration">0:00</div>
@@ -453,10 +383,6 @@
           <span id="broadcastText">Start Broadcasting</span>
         </button>
 
-        <div class="share-section" id="shareSection">
-          <label>Share this link with listeners:</label>
-          <input type="text" id="listenerUrl" readonly onclick="this.select()">
-        </div>
       </div>
     </div>
 
@@ -507,22 +433,13 @@
     const broadcastText = document.getElementById('broadcastText');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const listenerCount = document.getElementById('listenerCount');
     const sidebarListenerCount = document.getElementById('sidebarListenerCount');
     const visualizer = document.getElementById('visualizer');
     const errorEl = document.getElementById('error');
     const deviceSelect = document.getElementById('deviceSelect');
-    const shareSection = document.getElementById('shareSection');
-    const listenerUrl = document.getElementById('listenerUrl');
-    const listenerAnchor = document.getElementById('listenerAnchor');
     const listenerNamesEl = document.getElementById('listenerNames');
     const durationEl = document.getElementById('duration');
     const bitrateEl = document.getElementById('bitrate');
-
-    // Set listener URL
-    const baseUrl = window.location.origin;
-    listenerUrl.value = baseUrl;
-    listenerAnchor.href = baseUrl;
 
     // Create visualizer bars
     for (let i = 0; i < 30; i++) {
@@ -760,7 +677,6 @@
           broadcastButton.className = 'broadcast-button stop';
           broadcastIcon.textContent = '⏹';
           broadcastText.textContent = 'Stop Broadcasting';
-          shareSection.classList.add('visible');
           updateVisualizer();
           break;
 
@@ -803,7 +719,6 @@
           break;
 
         case 'listeners':
-          listenerCount.textContent = data.count;
           sidebarListenerCount.textContent = data.count;
           if (data.list) {
             updateListenerNames(data.list);
@@ -901,9 +816,9 @@
       broadcastButton.className = 'broadcast-button start';
       broadcastIcon.textContent = '📡';
       broadcastText.textContent = 'Start Broadcasting';
-      shareSection.classList.remove('visible');
       durationEl.textContent = '0:00';
       bitrateEl.textContent = '--';
+      sidebarListenerCount.textContent = '0';
       updateListenerNames([]);
 
       bars.forEach(bar => bar.style.height = '10px');
@@ -913,7 +828,6 @@
     fetch('/api/status')
       .then(r => r.json())
       .then(data => {
-        listenerCount.textContent = data.listeners || 0;
         sidebarListenerCount.textContent = data.listeners || 0;
       })
       .catch(() => {});
