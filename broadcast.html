@@ -303,6 +303,37 @@
       font-size: 14px;
     }
 
+    .listener-status {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .status-icon {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .status-icon.connecting {
+      background: #ffaa00;
+      box-shadow: 0 0 8px #ffaa00;
+      animation: pulse 1.5s infinite;
+    }
+
+    .status-icon.listening {
+      background: #00ff88;
+      box-shadow: 0 0 10px #00ff88;
+    }
+
+    .status-icon.paused {
+      background: #666;
+    }
+
     .no-listeners {
       color: rgba(255, 255, 255, 0.4);
       font-size: 13px;
@@ -322,6 +353,58 @@
     .info a {
       color: #ff6b6b;
       text-decoration: none;
+    }
+
+    .listener-url-box {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .listener-url-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+    }
+
+    .listener-url-container {
+      display: flex;
+      gap: 8px;
+    }
+
+    .listener-url {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .copy-btn {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #ff6b6b;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255, 107, 107, 0.3);
+    }
+
+    .copy-btn.copied {
+      background: rgba(0, 255, 136, 0.2);
+      border-color: rgba(0, 255, 136, 0.3);
+      color: #00ff88;
     }
 
     /* Responsive */
@@ -383,14 +466,22 @@
           <span id="broadcastText">Start Broadcasting</span>
         </button>
 
+        <div class="listener-url-box">
+          <div class="listener-url-label">Listener URL</div>
+          <div class="listener-url-container">
+            <div class="listener-url" id="listenerUrl">Loading...</div>
+            <button class="copy-btn" id="copyUrlBtn" title="Copy URL">Copy</button>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- Sidebar - Connected Listeners -->
+    <!-- Sidebar - Connected Clients -->
     <div class="sidebar">
       <div class="card">
         <div class="card-header">
-          <h2>Connected Listeners</h2>
+          <h2>Connected Clients</h2>
         </div>
 
         <div class="listener-count-display">
@@ -404,17 +495,14 @@
             <div class="no-listeners">No listeners connected yet</div>
           </div>
         </div>
-
-        <div class="info">
-          <p>Listeners join at <a href="/" id="listenerAnchor">/</a></p>
-        </div>
       </div>
     </div>
   </div>
 
   <script>
     // State
-    let ws = null;
+    let dashboardWs = null; // WebSocket for receiving client list (always connected)
+    let ws = null; // WebSocket for broadcasting (only when broadcasting)
     let localStream = null;
     let peerConnections = new Map(); // listenerId -> RTCPeerConnection
     let audioContext = null;
@@ -502,15 +590,20 @@
       errorEl.classList.remove('visible');
     }
 
-    function updateListenerNames(list) {
+    function updateClientList(list) {
       if (!list || list.length === 0) {
-        listenerNamesEl.innerHTML = '<div class="no-listeners">No listeners connected yet</div>';
+        listenerNamesEl.innerHTML = '<div class="no-listeners">No clients connected yet</div>';
       } else {
         listenerNamesEl.innerHTML = list.map(l => {
           const initial = l.name.charAt(0).toUpperCase();
+          const status = l.status || 'connecting';
+          const statusTitle = status.charAt(0).toUpperCase() + status.slice(1);
           return `<div class="listener-item">
             <div class="listener-avatar">${escapeHtml(initial)}</div>
             <div class="listener-name">${escapeHtml(l.name)}</div>
+            <div class="listener-status" title="${statusTitle}">
+              <div class="status-icon ${status}"></div>
+            </div>
           </div>`;
         }).join('');
       }
@@ -626,8 +719,12 @@
         const source = audioContext.createMediaStreamSource(localStream);
         source.connect(analyser);
 
+        // When loaded via file://, connect to localhost; otherwise use current host
+        const wsHost = window.location.protocol === 'file:'
+          ? 'localhost:3000'
+          : window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${protocol}//${window.location.host}`);
+        ws = new WebSocket(`${protocol}//${wsHost}`);
 
         ws.onopen = () => {
           updateStatus('Connected', true, false);
@@ -710,6 +807,11 @@
         case 'ice-candidate':
           const pc2 = peerConnections.get(data.listenerId);
           if (pc2 && data.candidate) {
+            // Filter out mDNS (.local) candidates - they cause resolution errors
+            if (data.candidate.candidate && data.candidate.candidate.includes('.local')) {
+              console.log('Skipping incoming mDNS candidate:', data.candidate.candidate);
+              break;
+            }
             try {
               await pc2.addIceCandidate(new RTCIceCandidate(data.candidate));
             } catch (e) {
@@ -718,10 +820,10 @@
           }
           break;
 
-        case 'listeners':
+        case 'clients':
           sidebarListenerCount.textContent = data.count;
           if (data.list) {
-            updateListenerNames(data.list);
+            updateClientList(data.list);
           }
           break;
       }
@@ -748,6 +850,12 @@
 
       pc.onicecandidate = (event) => {
         if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          // Filter out mDNS (.local) candidates - they cause resolution errors
+          // and won't work across different networks anyway
+          if (event.candidate.candidate && event.candidate.candidate.includes('.local')) {
+            console.log('Skipping mDNS candidate:', event.candidate.candidate);
+            return;
+          }
           ws.send(JSON.stringify({
             type: 'ice-candidate',
             listenerId: listenerId,
@@ -818,19 +926,99 @@
       broadcastText.textContent = 'Start Broadcasting';
       durationEl.textContent = '0:00';
       bitrateEl.textContent = '--';
-      sidebarListenerCount.textContent = '0';
-      updateListenerNames([]);
+      // Don't clear client list - dashboard WebSocket keeps it updated
 
       bars.forEach(bar => bar.style.height = '10px');
     }
 
-    // Initial status fetch
-    fetch('/api/status')
-      .then(r => r.json())
-      .then(data => {
-        sidebarListenerCount.textContent = data.listeners || 0;
-      })
-      .catch(() => {});
+    // Listener URL elements
+    const listenerUrlEl = document.getElementById('listenerUrl');
+    const copyUrlBtn = document.getElementById('copyUrlBtn');
+    let currentListenerUrl = '';
+
+    // Fetch listener URL from server
+    function fetchListenerUrl() {
+      const apiBase = window.location.protocol === 'file:'
+        ? 'http://localhost:3000'
+        : '';
+
+      fetch(`${apiBase}/api/status`)
+        .then(r => r.json())
+        .then(data => {
+          sidebarListenerCount.textContent = data.listeners || 0;
+          if (data.listenerUrls && data.listenerUrls.length > 0) {
+            currentListenerUrl = data.listenerUrls[0];
+            listenerUrlEl.textContent = currentListenerUrl;
+            listenerUrlEl.title = currentListenerUrl;
+          } else {
+            listenerUrlEl.textContent = 'http://localhost:3000';
+            currentListenerUrl = 'http://localhost:3000';
+          }
+        })
+        .catch(() => {
+          listenerUrlEl.textContent = 'Server not running';
+        });
+    }
+
+    // Copy URL to clipboard
+    copyUrlBtn.addEventListener('click', async () => {
+      if (!currentListenerUrl) return;
+
+      try {
+        await navigator.clipboard.writeText(currentListenerUrl);
+        copyUrlBtn.textContent = 'Copied!';
+        copyUrlBtn.classList.add('copied');
+        setTimeout(() => {
+          copyUrlBtn.textContent = 'Copy';
+          copyUrlBtn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    });
+
+    // Connect dashboard WebSocket to receive client list updates
+    function connectDashboard() {
+      if (dashboardWs && dashboardWs.readyState === WebSocket.OPEN) return;
+
+      const wsHost = window.location.protocol === 'file:'
+        ? 'localhost:3000'
+        : window.location.host;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      dashboardWs = new WebSocket(`${protocol}//${wsHost}`);
+
+      dashboardWs.onopen = () => {
+        console.log('Dashboard WebSocket connected');
+        dashboardWs.send(JSON.stringify({ type: 'register-dashboard' }));
+      };
+
+      dashboardWs.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'clients') {
+            sidebarListenerCount.textContent = data.count;
+            if (data.list) {
+              updateClientList(data.list);
+            }
+          }
+        } catch (e) {
+          console.error('Dashboard message error:', e);
+        }
+      };
+
+      dashboardWs.onclose = () => {
+        console.log('Dashboard WebSocket closed, reconnecting...');
+        setTimeout(connectDashboard, 3000);
+      };
+
+      dashboardWs.onerror = (error) => {
+        console.error('Dashboard WebSocket error:', error);
+      };
+    }
+
+    // Initial setup
+    fetchListenerUrl();
+    connectDashboard();
   </script>
 </body>
 </html>

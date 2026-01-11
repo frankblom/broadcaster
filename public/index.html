@@ -32,7 +32,7 @@
       background: rgba(255, 255, 255, 0.05);
       backdrop-filter: blur(10px);
       border-radius: 20px;
-      padding: 40px;
+      padding: 30px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
     }
@@ -267,7 +267,7 @@
   <div class="container">
     <div class="card">
       <div class="header-row">
-        <h1>🎧 Audio Broadcast</h1>
+        <h1>Listen Live</h1>
         <div class="status-section" id="statusSection">
           <div class="status-indicator">
             <span class="status-dot" id="statusDot"></span>
@@ -275,7 +275,7 @@
           </div>
         </div>
       </div>
-      <p class="subtitle">Real-time audio streaming</p>
+      <p class="subtitle"></p>
 
       <div class="error-message" id="error"></div>
       <div class="warning-message" id="warning"></div>
@@ -361,7 +361,7 @@
       if (reconnectInterval) return; // Already reconnecting
 
       isReconnecting = true;
-      showWarning('Broadcast ended. Waiting for broadcaster to return...');
+      showWarning('No Active Broadcast. Waiting for broadcaster to start...');
       updateStatus('Waiting', 'waiting');
 
       // Update button to allow canceling reconnect
@@ -376,9 +376,10 @@
           const data = await response.json();
 
           if (data.broadcasting) {
-            // Broadcaster is back, reconnect
+            // Broadcaster is back, start listening
             stopReconnecting();
             hideMessages();
+            // Use startAudio to properly set up audio context and request offer
             startAudio();
           }
         } catch (e) {
@@ -407,8 +408,96 @@
       localStorage.setItem('listenerName', name);
       namePrompt.style.display = 'none';
       listenerContent.classList.add('visible');
-      // Start connecting immediately
-      startAudio();
+      // Connect to server and register (but don't start listening yet)
+      connectAndRegister();
+    }
+
+    // Connect WebSocket and register as a client (without starting audio)
+    function connectAndRegister() {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+
+      updateStatus('Connecting...', 'waiting');
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected, registering...');
+        // Register as a client with name
+        ws.send(JSON.stringify({ type: 'register-client', name: listenerName }));
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          await handleMessage(data);
+        } catch (e) {
+          console.error('Error parsing message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+        if (!intentionalStop) {
+          updateStatus('Disconnected');
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        if (!intentionalStop) {
+          showError('Connection failed');
+          updateStatus('Disconnected');
+        }
+      };
+    }
+
+    async function handleMessage(data) {
+      switch (data.type) {
+        case 'registered':
+          console.log('Registered as client');
+          updateStatus('Connected', 'connected');
+          hideMessages();
+          // Check if broadcaster is available
+          fetch('/api/status')
+            .then(r => r.json())
+            .then(status => {
+              if (!status.broadcasting) {
+                showWarning('No broadcaster is currently streaming. Click "Start Listening" when ready.');
+              }
+            })
+            .catch(() => {});
+          break;
+
+        case 'offer':
+          await handleOffer(data.sdp);
+          break;
+
+        case 'ice-candidate':
+          await handleIceCandidate(data.candidate);
+          break;
+
+        case 'no-broadcaster':
+          showWarning('No broadcaster is currently streaming. Waiting for broadcaster...');
+          updateStatus('Waiting', 'waiting');
+          playButton.disabled = false;
+          // Start polling for broadcaster
+          startReconnecting();
+          break;
+
+        case 'broadcast-ended':
+          // Update status to paused
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'status-update', status: 'paused' }));
+          }
+          cleanupAudioOnly();
+          startReconnecting();
+          break;
+
+        case 'clients':
+          // Just ignore client count updates on listener side
+          break;
+      }
     }
 
     // Allow Enter key to submit name
@@ -463,69 +552,43 @@
 
     async function startAudio() {
       intentionalStop = false;
+      stopReconnecting();
       hideMessages();
       playButton.disabled = true;
       updateStatus('Connecting...', 'waiting');
 
+      // Clean up any existing peer connection
+      if (peerConnection) {
+        console.log('Cleaning up existing peer connection');
+        peerConnection.close();
+        peerConnection = null;
+      }
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+      }
+
       try {
         // Create audio context for visualization
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
+        if (!audioContext || audioContext.state === 'closed') {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 256;
+        }
 
-        // Connect to WebSocket for signaling
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${protocol}//${window.location.host}`);
-
-        ws.onopen = () => {
-          updateStatus('Connected', 'connected');
-          // Request to listen with name
-          ws.send(JSON.stringify({ type: 'request-offer', name: listenerName }));
-        };
-
-        ws.onmessage = async (event) => {
-          try {
-            const data = JSON.parse(event.data);
-
-            switch (data.type) {
-              case 'offer':
-                await handleOffer(data.sdp);
-                break;
-
-              case 'ice-candidate':
-                await handleIceCandidate(data.candidate);
-                break;
-
-              case 'no-broadcaster':
-                showWarning('No broadcaster is currently streaming. Waiting for broadcaster...');
-                updateStatus('Waiting', 'waiting');
-                playButton.disabled = false;
-                // Start polling for broadcaster
-                cleanupConnection();
-                startReconnecting();
-                break;
-
-              case 'broadcast-ended':
-                cleanupConnection();
-                startReconnecting();
-                break;
+        // Make sure we have a WebSocket connection
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          connectAndRegister();
+          // Wait a bit for connection then request offer
+          setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'request-offer' }));
             }
-          } catch (e) {
-            console.error('Error parsing message:', e);
-          }
-        };
-
-        ws.onclose = () => {
-          updateStatus('Disconnected');
-          console.log('WebSocket closed');
-        };
-
-        ws.onerror = (error) => {
-          if (intentionalStop) return;
-          console.error('WebSocket error:', error);
-          showError('Connection failed: ' + error.message);
-          stopAudio();
-        };
+          }, 500);
+        } else {
+          // Already connected, request offer
+          ws.send(JSON.stringify({ type: 'request-offer' }));
+        }
 
       } catch (error) {
         console.error('Start error:', error);
@@ -534,8 +597,20 @@
       }
     }
 
+    let connectionTimeout = null;
+
     async function handleOffer(sdp) {
       console.log('Received WebRTC offer');
+
+      // Set a connection timeout (15 seconds)
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      connectionTimeout = setTimeout(() => {
+        if (peerConnection && peerConnection.iceConnectionState !== 'connected' && peerConnection.iceConnectionState !== 'completed') {
+          console.log('Connection timeout - ICE state:', peerConnection.iceConnectionState);
+          showError('Connection timed out. Try again.');
+          playButton.disabled = false;
+        }
+      }, 15000);
 
       // Create peer connection
       peerConnection = new RTCPeerConnection({
@@ -590,6 +665,12 @@
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
         if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          // Filter out mDNS (.local) candidates - they cause resolution errors
+          // and won't work across different networks anyway
+          if (event.candidate.candidate && event.candidate.candidate.includes('.local')) {
+            console.log('Skipping mDNS candidate:', event.candidate.candidate);
+            return;
+          }
           ws.send(JSON.stringify({
             type: 'ice-candidate',
             candidate: event.candidate
@@ -597,20 +678,40 @@
         }
       };
 
-      peerConnection.onconnectionstatechange = () => {
-        console.log('Connection state:', peerConnection.connectionState);
-        switch (peerConnection.connectionState) {
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', peerConnection.iceConnectionState);
+        switch (peerConnection.iceConnectionState) {
+          case 'checking':
+            updateStatus('Connecting...', 'waiting');
+            break;
           case 'connected':
+          case 'completed':
+            if (connectionTimeout) {
+              clearTimeout(connectionTimeout);
+              connectionTimeout = null;
+            }
             updateStatus('Streaming', 'streaming');
             break;
           case 'disconnected':
             updateStatus('Reconnecting...', 'waiting');
             break;
           case 'failed':
+            if (connectionTimeout) {
+              clearTimeout(connectionTimeout);
+              connectionTimeout = null;
+            }
             showError('Connection failed. Try reconnecting.');
             stopAudio();
             break;
         }
+      };
+
+      peerConnection.onicegatheringstatechange = () => {
+        console.log('ICE gathering state:', peerConnection.iceGatheringState);
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
       };
 
       // Set remote description (offer from broadcaster)
@@ -630,6 +731,11 @@
 
     async function handleIceCandidate(candidate) {
       if (peerConnection && candidate) {
+        // Filter out mDNS (.local) candidates - they cause resolution errors
+        if (candidate.candidate && candidate.candidate.includes('.local')) {
+          console.log('Skipping incoming mDNS candidate:', candidate.candidate);
+          return;
+        }
         try {
           await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (error) {
@@ -638,18 +744,13 @@
       }
     }
 
-    // Cleanup connection without affecting reconnect state or UI fully
-    function cleanupConnection() {
+    // Cleanup audio/WebRTC only (keep WebSocket connected)
+    function cleanupAudioOnly() {
       isPlaying = false;
 
       if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
-      }
-
-      if (ws) {
-        ws.close();
-        ws = null;
       }
 
       if (audioElement) {
@@ -672,7 +773,36 @@
       bars.forEach(bar => bar.style.height = '10px');
     }
 
+    // Full cleanup including WebSocket
+    function cleanupConnection() {
+      cleanupAudioOnly();
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+
     function stopAudio() {
+      intentionalStop = true;
+      stopReconnecting();
+
+      // Send status update before cleaning up audio
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'status-update', status: 'paused' }));
+      }
+
+      cleanupAudioOnly();
+
+      updateStatus('Connected', 'connected');
+      playButton.disabled = false;
+      playButton.className = 'play-button start';
+      playIcon.textContent = '▶';
+      playText.textContent = 'Start Listening';
+    }
+
+    // Fully disconnect (close WebSocket too)
+    function disconnect() {
       intentionalStop = true;
       stopReconnecting();
       cleanupConnection();

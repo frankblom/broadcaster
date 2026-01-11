@@ -1,14 +1,23 @@
 {
   "name": "audio-broadcaster",
   "version": "1.0.0",
-  "description": "Real-time audio broadcasting server",
-  "main": "server.js",
+  "description": "Real-time audio broadcasting application",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js --dev"
+    "start": "electron .",
+    "start:server": "node server.js",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
   },
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^3.1.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
   }
 }

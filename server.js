@@ -16,197 +16,14 @@ const server = http.createServer(app);
 // WebSocket server for signaling
 const wss = new WebSocket.Server({ server });
 
-// Track broadcaster and listeners
+// Track broadcaster, dashboard, and clients
 let broadcaster = null;
-const listeners = new Map(); // listenerId -> { ws, name }
-let listenerIdCounter = 0;
+let dashboard = null; // Dashboard connection (receives client list updates)
+const clients = new Map(); // clientId -> { ws, name, status: 'connecting' | 'listening' | 'paused' }
+let clientIdCounter = 0;
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-
-// API endpoint for server status
-app.get('/api/status', (req, res) => {
-  res.json({
-    listeners: listeners.size,
-    broadcasting: broadcaster !== null,
-    uptime: process.uptime(),
-  });
-});
-
-// Get list of listener names
-function getListenerList() {
-  const list = [];
-  for (const [id, listener] of listeners) {
-    list.push({ id, name: listener.name });
-  }
-  return list;
-}
-
-// Broadcast listener count and list to broadcaster and all listeners
-function broadcastListenerCount() {
-  const listenerList = getListenerList();
-
-  // Send full list to broadcaster
-  if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-    broadcaster.send(JSON.stringify({
-      type: 'listeners',
-      count: listeners.size,
-      list: listenerList,
-    }));
-  }
-
-  // Send just count to listeners
-  const countMessage = JSON.stringify({
-    type: 'listeners',
-    count: listeners.size,
-  });
-
-  for (const [, listener] of listeners) {
-    if (listener.ws.readyState === WebSocket.OPEN) {
-      try {
-        listener.ws.send(countMessage);
-      } catch (error) {
-        // Ignore errors
-      }
-    }
-  }
-}
-
-// WebSocket connection handler
-wss.on('connection', (ws, req) => {
-  const clientIp = req.socket.remoteAddress;
-  console.log(`Client connected from ${clientIp}`);
-
-  let clientType = null; // 'broadcaster' or 'listener'
-  let listenerId = null;
-
-  ws.on('message', async (message) => {
-    try {
-      const data = JSON.parse(message.toString());
-
-      switch (data.type) {
-        // Broadcaster registration
-        case 'register-broadcaster':
-          if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-            // Already have a broadcaster
-            ws.send(JSON.stringify({ type: 'broadcaster-rejected' }));
-          } else {
-            broadcaster = ws;
-            clientType = 'broadcaster';
-            console.log('Broadcaster registered');
-            ws.send(JSON.stringify({ type: 'broadcaster-registered' }));
-            broadcastListenerCount();
-          }
-          break;
-
-        // Listener wants to connect
-        case 'request-offer':
-          if (!broadcaster || broadcaster.readyState !== WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'no-broadcaster' }));
-            return;
-          }
-
-          clientType = 'listener';
-          listenerId = ++listenerIdCounter;
-          const listenerName = data.name || `Listener ${listenerId}`;
-          listeners.set(listenerId, { ws, name: listenerName });
-          ws.listenerId = listenerId;
-
-          console.log(`Listener ${listenerId} (${listenerName}) registered. Total: ${listeners.size}`);
-          broadcastListenerCount();
-
-          // Tell broadcaster about new listener
-          broadcaster.send(JSON.stringify({
-            type: 'listener-joined',
-            listenerId: listenerId,
-            name: listenerName
-          }));
-          break;
-
-        // Broadcaster sends offer to a specific listener
-        case 'offer':
-          if (clientType === 'broadcaster' && data.listenerId) {
-            const listener = listeners.get(data.listenerId);
-            if (listener && listener.ws.readyState === WebSocket.OPEN) {
-              listener.ws.send(JSON.stringify({
-                type: 'offer',
-                sdp: data.sdp
-              }));
-            }
-          }
-          break;
-
-        // Listener sends answer back to broadcaster
-        case 'answer':
-          if (clientType === 'listener' && broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-            broadcaster.send(JSON.stringify({
-              type: 'answer',
-              listenerId: listenerId,
-              sdp: data.sdp
-            }));
-          }
-          break;
-
-        // ICE candidate exchange
-        case 'ice-candidate':
-          if (clientType === 'broadcaster' && data.listenerId) {
-            // Broadcaster -> Listener
-            const listener = listeners.get(data.listenerId);
-            if (listener && listener.ws.readyState === WebSocket.OPEN) {
-              listener.ws.send(JSON.stringify({
-                type: 'ice-candidate',
-                candidate: data.candidate
-              }));
-            }
-          } else if (clientType === 'listener' && broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-            // Listener -> Broadcaster
-            broadcaster.send(JSON.stringify({
-              type: 'ice-candidate',
-              listenerId: listenerId,
-              candidate: data.candidate
-            }));
-          }
-          break;
-      }
-    } catch (error) {
-      console.error('Error handling message:', error);
-    }
-  });
-
-  ws.on('close', () => {
-    if (clientType === 'broadcaster') {
-      console.log('Broadcaster disconnected');
-      broadcaster = null;
-
-      // Notify all listeners that broadcast ended
-      for (const [, listener] of listeners) {
-        if (listener.ws.readyState === WebSocket.OPEN) {
-          listener.ws.send(JSON.stringify({ type: 'broadcast-ended' }));
-        }
-      }
-    } else if (clientType === 'listener' && listenerId) {
-      const listener = listeners.get(listenerId);
-      const name = listener ? listener.name : `Listener ${listenerId}`;
-      listeners.delete(listenerId);
-      console.log(`Listener ${listenerId} (${name}) disconnected. Total: ${listeners.size}`);
-
-      // Tell broadcaster about listener leaving
-      if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
-        broadcaster.send(JSON.stringify({
-          type: 'listener-left',
-          listenerId: listenerId,
-          name: name
-        }));
-      }
-
-      broadcastListenerCount();
-    }
-  });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error.message);
-  });
-});
 
 // Get local IP addresses for display
 function getLocalIPs() {
@@ -223,6 +40,236 @@ function getLocalIPs() {
 
   return addresses;
 }
+
+// API endpoint for server status
+app.get('/api/status', (req, res) => {
+  const ips = getLocalIPs();
+  const port = CONFIG.port;
+  res.json({
+    clients: clients.size,
+    broadcasting: broadcaster !== null,
+    uptime: process.uptime(),
+    listenerUrls: ips.map(ip => `http://${ip}:${port}`),
+  });
+});
+
+// Get list of clients with their status
+function getClientList() {
+  const list = [];
+  for (const [id, client] of clients) {
+    list.push({ id, name: client.name, status: client.status });
+  }
+  return list;
+}
+
+// Broadcast client list to broadcaster, dashboard, and count to clients
+function broadcastClientList() {
+  const clientList = getClientList();
+  const fullMessage = JSON.stringify({
+    type: 'clients',
+    count: clients.size,
+    list: clientList,
+  });
+
+  // Send full list to broadcaster
+  if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
+    broadcaster.send(fullMessage);
+  }
+
+  // Send full list to dashboard (even when not broadcasting)
+  if (dashboard && dashboard.readyState === WebSocket.OPEN) {
+    dashboard.send(fullMessage);
+  }
+
+  // Send just count to clients
+  const countMessage = JSON.stringify({
+    type: 'clients',
+    count: clients.size,
+  });
+
+  for (const [, client] of clients) {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      try {
+        client.ws.send(countMessage);
+      } catch (error) {
+        // Ignore errors
+      }
+    }
+  }
+}
+
+// WebSocket connection handler
+wss.on('connection', (ws, req) => {
+  const clientIp = req.socket.remoteAddress;
+  console.log(`Client connected from ${clientIp}`);
+
+  let clientType = null; // 'broadcaster' or 'client'
+  let clientId = null;
+
+  ws.on('message', async (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      switch (data.type) {
+        // Dashboard registration (to receive client list without broadcasting)
+        case 'register-dashboard':
+          dashboard = ws;
+          clientType = 'dashboard';
+          console.log('Dashboard registered');
+          ws.send(JSON.stringify({ type: 'dashboard-registered' }));
+          broadcastClientList();
+          break;
+
+        // Broadcaster registration
+        case 'register-broadcaster':
+          if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
+            // Already have a broadcaster
+            ws.send(JSON.stringify({ type: 'broadcaster-rejected' }));
+          } else {
+            broadcaster = ws;
+            clientType = 'broadcaster';
+            console.log('Broadcaster registered');
+            ws.send(JSON.stringify({ type: 'broadcaster-registered' }));
+            broadcastClientList();
+          }
+          break;
+
+        // Client registers with name (before starting to listen)
+        case 'register-client':
+          clientType = 'client';
+          clientId = ++clientIdCounter;
+          const clientName = data.name || `Client ${clientId}`;
+          clients.set(clientId, { ws, name: clientName, status: 'connecting' });
+          ws.clientId = clientId;
+
+          console.log(`Client ${clientId} (${clientName}) registered. Total: ${clients.size}`);
+          broadcastClientList();
+
+          // Send client their ID
+          ws.send(JSON.stringify({ type: 'registered', clientId }));
+          break;
+
+        // Client wants to start listening
+        case 'request-offer':
+          if (!broadcaster || broadcaster.readyState !== WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'no-broadcaster' }));
+            return;
+          }
+
+          // Update client status to listening
+          if (clientId && clients.has(clientId)) {
+            const client = clients.get(clientId);
+            client.status = 'listening';
+            clients.set(clientId, client);
+            broadcastClientList();
+          }
+
+          // Tell broadcaster about listener wanting to connect
+          broadcaster.send(JSON.stringify({
+            type: 'listener-joined',
+            listenerId: clientId,
+            name: clients.get(clientId)?.name || 'Unknown'
+          }));
+          break;
+
+        // Client updates their status (paused/listening)
+        case 'status-update':
+          if (clientId && clients.has(clientId)) {
+            const client = clients.get(clientId);
+            client.status = data.status; // 'connecting', 'listening', 'paused'
+            clients.set(clientId, client);
+            console.log(`Client ${clientId} status: ${data.status}`);
+            broadcastClientList();
+          }
+          break;
+
+        // Broadcaster sends offer to a specific client
+        case 'offer':
+          if (clientType === 'broadcaster' && data.listenerId) {
+            const client = clients.get(data.listenerId);
+            if (client && client.ws.readyState === WebSocket.OPEN) {
+              client.ws.send(JSON.stringify({
+                type: 'offer',
+                sdp: data.sdp
+              }));
+            }
+          }
+          break;
+
+        // Client sends answer back to broadcaster
+        case 'answer':
+          if (clientType === 'client' && broadcaster && broadcaster.readyState === WebSocket.OPEN) {
+            broadcaster.send(JSON.stringify({
+              type: 'answer',
+              listenerId: clientId,
+              sdp: data.sdp
+            }));
+          }
+          break;
+
+        // ICE candidate exchange
+        case 'ice-candidate':
+          if (clientType === 'broadcaster' && data.listenerId) {
+            // Broadcaster -> Client
+            const client = clients.get(data.listenerId);
+            if (client && client.ws.readyState === WebSocket.OPEN) {
+              client.ws.send(JSON.stringify({
+                type: 'ice-candidate',
+                candidate: data.candidate
+              }));
+            }
+          } else if (clientType === 'client' && broadcaster && broadcaster.readyState === WebSocket.OPEN) {
+            // Client -> Broadcaster
+            broadcaster.send(JSON.stringify({
+              type: 'ice-candidate',
+              listenerId: clientId,
+              candidate: data.candidate
+            }));
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    if (clientType === 'dashboard') {
+      console.log('Dashboard disconnected');
+      dashboard = null;
+    } else if (clientType === 'broadcaster') {
+      console.log('Broadcaster disconnected');
+      broadcaster = null;
+
+      // Notify all clients that broadcast ended
+      for (const [, client] of clients) {
+        if (client.ws.readyState === WebSocket.OPEN) {
+          client.ws.send(JSON.stringify({ type: 'broadcast-ended' }));
+        }
+      }
+    } else if (clientType === 'client' && clientId) {
+      const client = clients.get(clientId);
+      const name = client ? client.name : `Client ${clientId}`;
+      clients.delete(clientId);
+      console.log(`Client ${clientId} (${name}) disconnected. Total: ${clients.size}`);
+
+      // Tell broadcaster about client leaving
+      if (broadcaster && broadcaster.readyState === WebSocket.OPEN) {
+        broadcaster.send(JSON.stringify({
+          type: 'listener-left',
+          listenerId: clientId,
+          name: name
+        }));
+      }
+
+      broadcastClientList();
+    }
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error.message);
+  });
+});
 
 // Start the server
 server.listen(CONFIG.port, () => {
@@ -247,10 +294,10 @@ server.listen(CONFIG.port, () => {
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
 
-  for (const [, listener] of listeners) {
-    listener.ws.close();
+  for (const [, client] of clients) {
+    client.ws.close();
   }
-  listeners.clear();
+  clients.clear();
 
   if (broadcaster) {
     broadcaster.close();
