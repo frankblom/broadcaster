@@ -8,10 +8,12 @@
     "start:server": "node server.js",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
+    "release": "./scripts/release.sh",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "express": "^4.18.2",
     "ws": "^8.16.0"
   },
@@ -19,5 +21,28 @@
     "@electron/notarize": "^3.1.1",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.audiobroadcaster.app",
+    "productName": "AudioCaster",
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": {
+        "teamId": "YOUR_TEAM_ID"
+      }
+    },
+    "win": {
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "icon": "build/icon.png"
+    }
   }
 }

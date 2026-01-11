@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="centerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a5b4fc"/>
+      <stop offset="100%" style="stop-color:#818cf8"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background rounded square -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle inner highlight -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+  
+  <!-- Broadcast rings -->
+  <circle cx="256" cy="256" r="200" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.2"/>
+  <circle cx="256" cy="256" r="155" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.4"/>
+  <circle cx="256" cy="256" r="110" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.6"/>
+  
+  <!-- Central circle -->
+  <circle cx="256" cy="256" r="65" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="45" fill="url(#centerGrad)"/>
+</svg>
