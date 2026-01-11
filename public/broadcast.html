@@ -497,6 +497,9 @@
     let selectedDeviceId = null;
     let broadcastStartTime = null;
     let durationInterval = null;
+    let bitrateInterval = null;
+    let lastBytesSent = 0;
+    let lastBitrateTime = 0;
 
     // DOM elements
     const broadcastButton = document.getElementById('broadcastButton');
@@ -621,6 +624,41 @@
       }
     }
 
+    async function updateBitrate() {
+      if (!isBroadcasting || peerConnections.size === 0) {
+        return;
+      }
+
+      let totalBytesSent = 0;
+
+      for (const pc of peerConnections.values()) {
+        try {
+          const stats = await pc.getStats();
+          stats.forEach(report => {
+            if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+              totalBytesSent += report.bytesSent || 0;
+            }
+          });
+        } catch (e) {
+          // Ignore stats errors
+        }
+      }
+
+      const now = Date.now();
+      if (lastBitrateTime > 0 && totalBytesSent > lastBytesSent) {
+        const timeDiff = (now - lastBitrateTime) / 1000; // seconds
+        const bytesDiff = totalBytesSent - lastBytesSent;
+        const bitrate = (bytesDiff * 8) / timeDiff / 1000; // kbps
+
+        if (bitrate > 0) {
+          bitrateEl.textContent = Math.round(bitrate) + 'k';
+        }
+      }
+
+      lastBytesSent = totalBytesSent;
+      lastBitrateTime = now;
+    }
+
     function updateVisualizer() {
       if (!analyser || !isBroadcasting) {
         bars.forEach(bar => bar.style.height = '10px');
@@ -714,7 +752,9 @@
           isBroadcasting = true;
           broadcastStartTime = Date.now();
           durationInterval = setInterval(updateDuration, 1000);
-          bitrateEl.textContent = '128k';
+          bitrateInterval = setInterval(updateBitrate, 1000);
+          lastBytesSent = 0;
+          lastBitrateTime = 0;
           updateStatus('Broadcasting', true, true);
           broadcastButton.disabled = false;
           broadcastButton.className = 'broadcast-button stop';
@@ -825,6 +865,11 @@
       if (durationInterval) {
         clearInterval(durationInterval);
         durationInterval = null;
+      }
+
+      if (bitrateInterval) {
+        clearInterval(bitrateInterval);
+        bitrateInterval = null;
       }
 
       peerConnections.forEach(pc => {
