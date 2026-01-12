@@ -1,28 +1,30 @@
 # Audio Broadcaster
 
-A real-time audio broadcasting server for macOS that streams audio from any input device to unlimited web clients.
+A desktop application for real-time audio broadcasting that streams audio from any input device to web-based listeners using WebRTC.
 
 ## Features
 
-- **Real-time streaming** - Low-latency Opus audio codec
-- **Unlimited listeners** - WebSocket-based distribution scales well
+- **Desktop app** - Native Electron application with auto-updates
+- **Real-time streaming** - Low-latency WebRTC peer-to-peer audio
+- **Unlimited listeners** - Each listener gets a direct WebRTC connection
 - **Web-based clients** - No app installation needed for listeners
-- **Live listener count** - See how many people are connected
-- **Audio visualization** - Visual feedback for listeners
+- **Live listener count** - See connected clients in real-time
+- **Audio visualization** - Visual feedback while broadcasting
 - **Device selection** - Choose from available audio inputs
-- **Auto-start/stop** - Audio capture starts when first client connects
-
-## Requirements
-
-- macOS (uses AVFoundation for audio capture)
-- Node.js 18+
-- FFmpeg with libopus support
+- **Cross-platform** - Builds available for macOS, Windows, and Linux
 
 ## Installation
 
-1. **Install FFmpeg** (if not already installed):
+### From Release
+
+Download the latest release for your platform from the [Releases](https://github.com/frankblom/audio-broadcaster/releases) page.
+
+### From Source
+
+1. **Clone the repository**:
    ```bash
-   brew install ffmpeg
+   git clone https://github.com/frankblom/audio-broadcaster.git
+   cd audio-broadcaster
    ```
 
 2. **Install dependencies**:
@@ -30,7 +32,7 @@ A real-time audio broadcasting server for macOS that streams audio from any inpu
    npm install
    ```
 
-3. **Start the server**:
+3. **Run the app**:
    ```bash
    npm start
    ```
@@ -39,90 +41,69 @@ A real-time audio broadcasting server for macOS that streams audio from any inpu
 
 ### For the Broadcaster
 
-1. Start the server with `npm start`
-2. Open the dashboard at `http://localhost:3000/dashboard.html`
-3. Select your audio input device
-4. Share the main URL with listeners
+1. Launch the Audio Broadcaster app
+2. Select your audio input device from the dropdown
+3. Click "Start Broadcasting"
+4. Share the listener URL with your audience (shown in the app)
 
 ### For Listeners
 
 1. Open the shared URL (e.g., `http://192.168.1.x:3000`)
-2. Click "Start Listening"
+2. Enter your name and click "Start Listening"
 3. Adjust volume as needed
 
-## Configuration
+## Building
 
-### Audio Device Selection
-
-List available devices:
+Build for your current platform:
 ```bash
-ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -A 20 "audio devices"
+npm run build
 ```
 
-Select a specific device:
+Build for specific platforms:
 ```bash
-AUDIO_DEVICE=1 npm start
-```
-
-### Port
-
-Change the port:
-```bash
-PORT=8080 npm start
-```
-
-### Example with both options:
-```bash
-AUDIO_DEVICE=2 PORT=8080 npm start
+npm run build:mac    # macOS (DMG and ZIP)
+npm run build:win    # Windows (NSIS installer)
+npm run build:linux  # Linux (AppImage and DEB)
 ```
 
 ## Network Setup
 
 For listeners on the same network:
-- Use the local IP address shown when the server starts
-- Make sure port 3000 (or your custom port) is not blocked
+- Use the listener URL shown in the app
+- Make sure port 3000 is not blocked by your firewall
 
 For listeners over the internet:
-- Set up port forwarding on your router
+- Set up port forwarding on your router for port 3000
 - Or use a service like ngrok: `ngrok http 3000`
 
 ## Technical Details
 
-- **Codec**: Opus (optimized for real-time audio)
-- **Container**: WebM (native browser support)
-- **Transport**: WebSocket (reliable delivery)
-- **Sample rate**: 48kHz stereo
-- **Bitrate**: 128kbps (configurable)
-- **Latency**: ~100-300ms typical
+- **Transport**: WebRTC (peer-to-peer audio streaming)
+- **Signaling**: WebSocket (connection negotiation)
+- **Audio**: Browser MediaStream API
+- **Latency**: Very low (~50-150ms typical)
 
 ## API Endpoints
 
+The embedded server exposes these endpoints:
+
 - `GET /` - Listener web UI
-- `GET /dashboard.html` - Broadcaster dashboard
-- `GET /api/status` - Server status (listeners, streaming state)
-- `GET /api/devices` - List audio input devices
-- `POST /api/device/:index` - Switch audio device
+- `GET /api/status` - Server status (listeners, streaming state, listener URLs)
 
 ## Troubleshooting
 
 ### No audio devices found
-Make sure FFmpeg is installed with AVFoundation support:
-```bash
-ffmpeg -f avfoundation -list_devices true -i ""
-```
+Make sure the app has microphone permission. On macOS, grant it in System Preferences > Security & Privacy > Privacy > Microphone.
 
-### Permission denied
-macOS may ask for microphone permission. Grant it in System Preferences > Security & Privacy > Microphone.
+### Listeners can't connect
+- Ensure the broadcaster and listeners are on the same network, or port forwarding is configured
+- Check that port 3000 is not blocked by a firewall
+- Verify the listener URL is accessible from the listener's device
 
-### High latency
-- Reduce network distance between server and clients
-- Use a wired connection instead of WiFi
-- Try reducing the bitrate
-
-### Audio cuts out
-- Check your network stability
-- Reduce the number of simultaneous listeners
-- Consider using a more powerful machine for many listeners
+### Audio quality issues
+- Use a wired network connection instead of WiFi when possible
+- Reduce network congestion
+- Check that your microphone input level is appropriate
 
 ## License
 

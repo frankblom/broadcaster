@@ -37,10 +37,20 @@ if [ -z "$APPLE_TEAM_ID" ] || [ "$APPLE_TEAM_ID" = "XXXXXXXXXX" ]; then
     exit 1
 fi
 
+if [ -z "$GH_TOKEN" ]; then
+    echo "Error: GH_TOKEN not configured in .env.signing"
+    echo "Create a GitHub personal access token with 'repo' scope at:"
+    echo "https://github.com/settings/tokens"
+    exit 1
+fi
+
 echo "Building Audio Broadcaster for macOS distribution..."
 echo "Using Apple ID: $APPLE_ID"
 echo "Team ID: $APPLE_TEAM_ID"
 echo ""
 
 cd "$PROJECT_DIR"
-npm run build:mac
+npm run build:mac -- --publish always
+
+echo ""
+echo "Release published to GitHub!"

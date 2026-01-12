@@ -1,6 +1,6 @@
 {
   "name": "audio-broadcaster",
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "Real-time audio broadcasting application",
   "main": "main.js",
   "scripts": {
@@ -28,6 +28,10 @@
     "directories": {
       "buildResources": "build"
     },
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    },
     "mac": {
       "icon": "build/icon.png",
       "entitlements": "build/entitlements.mac.plist",
@@ -35,7 +39,10 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "notarize": {
-        "teamId": "YOUR_TEAM_ID"
+        "teamId": "CZWTGV799Y"
+      },
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "AudioCaster needs access to your microphone to broadcast audio."
       }
     },
     "win": {
