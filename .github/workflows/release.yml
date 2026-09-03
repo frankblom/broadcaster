@@ -85,5 +85,12 @@ jobs:
       - name: Build and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Windows code signing (optional). electron-builder signs the
+          # installer automatically when these are set, and skips signing
+          # (unsigned build) when they are absent.
+          # CSC_LINK: base64-encoded .pfx/.p12 certificate
+          # CSC_KEY_PASSWORD: the certificate's password
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run build:win -- --publish always
 
