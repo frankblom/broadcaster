@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Translator Microphone</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 30px 25px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .card-header {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .card-header h1 {
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+    }
+
+    .error-message {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .error-message.visible { display: block; }
+
+    .section-label {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 10px;
+    }
+
+    .device-select {
+      width: 100%;
+      padding: 14px 15px;
+      font-size: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      cursor: pointer;
+      margin-bottom: 22px;
+    }
+
+    .device-select option {
+      background: #1a1a2e;
+      color: #fff;
+    }
+
+    /* Status */
+    .status-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #666;
+      flex-shrink: 0;
+    }
+
+    .status-dot.waiting { background: #ffaa00; box-shadow: 0 0 8px #ffaa00; animation: pulse 1.5s infinite; }
+    .status-dot.live { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+    .status-dot.muted { background: #ff6b6b; box-shadow: 0 0 10px #ff6b6b; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Level meter */
+    .meter {
+      height: 60px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 3px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      margin-bottom: 22px;
+    }
+
+    .meter .bar {
+      width: 6px;
+      background: linear-gradient(to top, #00ff88, #00cc6a);
+      border-radius: 3px;
+      height: 6px;
+      transition: height 0.1s;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 16px 20px;
+      font-size: 17px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00cc6a 0%, #00b85e 100%);
+      color: #fff;
+    }
+
+    .btn-mute {
+      background: linear-gradient(135deg, #ffaa00 0%, #ff9500 100%);
+      color: #fff;
+    }
+
+    .btn-mute.muted {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+    }
+
+    .btn-stop {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+
+    .hidden { display: none !important; }
+
+    .hint {
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 16px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <h1>🎤 Translator Microphone</h1>
+      <div class="subtitle">Send your audio to the broadcast</div>
+    </div>
+
+    <div class="error-message" id="error"></div>
+
+    <div class="section-label">Microphone</div>
+    <select class="device-select" id="deviceSelect">
+      <option value="">Select microphone...</option>
+    </select>
+
+    <div class="status-box">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Not connected</span>
+    </div>
+
+    <div class="meter" id="meter"></div>
+
+    <button class="btn btn-primary" id="connectBtn">🔴 Go Live</button>
+
+    <button class="btn btn-mute hidden" id="muteBtn">🔇 Mute</button>
+    <button class="btn btn-stop hidden" id="stopBtn">Stop</button>
+
+    <div class="hint">
+      Keep this page open and your screen awake while translating.
+      Audio only sends while you are "Live" and not muted.
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let pc = null;
+    let localStream = null;
+    let audioContext = null;
+    let analyser = null;
+    let selectedDeviceId = null;
+    let isLive = false;
+    let isMuted = false;
+    let iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+
+    const deviceSelect = document.getElementById('deviceSelect');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const errorEl = document.getElementById('error');
+    const connectBtn = document.getElementById('connectBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const meter = document.getElementById('meter');
+
+    // Build level meter bars
+    for (let i = 0; i < 20; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      meter.appendChild(bar);
+    }
+    const bars = meter.querySelectorAll('.bar');
+
+    function showError(msg) { errorEl.textContent = msg; errorEl.classList.add('visible'); }
+    function hideError() { errorEl.classList.remove('visible'); }
+
+    // getUserMedia only exists in a "secure context" (HTTPS, or localhost).
+    // Over a plain-HTTP LAN IP, navigator.mediaDevices is undefined — detect
+    // that up front and explain it instead of throwing a cryptic error.
+    function micSupported() {
+      return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    }
+
+    function insecureContextMessage() {
+      return 'Microphone access needs a secure connection (HTTPS). You are on '
+        + location.protocol + '//' + location.host + '. Open this page over '
+        + 'https:// (ask the host to start the server with HTTPS enabled), or use '
+        + 'localhost on the server machine.';
+    }
+
+    function setStatus(state, text) {
+      statusDot.className = 'status-dot ' + (state || '');
+      statusText.textContent = text;
+    }
+
+    async function loadMicrophones() {
+      if (!micSupported()) {
+        showError(insecureContextMessage());
+        connectBtn.disabled = true;
+        return;
+      }
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const mics = devices.filter(d => d.kind === 'audioinput');
+
+        deviceSelect.innerHTML = '<option value="">Select microphone...</option>';
+        mics.forEach(mic => {
+          const option = document.createElement('option');
+          option.value = mic.deviceId;
+          option.textContent = mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`;
+          deviceSelect.appendChild(option);
+        });
+
+        const savedId = localStorage.getItem('translatorMicId');
+        if (savedId && mics.some(m => m.deviceId === savedId)) {
+          deviceSelect.value = savedId;
+          selectedDeviceId = savedId;
+        } else if (mics.length > 0) {
+          deviceSelect.value = mics[0].deviceId;
+          selectedDeviceId = mics[0].deviceId;
+        }
+      } catch (e) {
+        showError('Could not access microphone. Please grant permission and reload.');
+        console.log('enumerate error', e);
+      }
+    }
+
+    deviceSelect.onchange = () => {
+      selectedDeviceId = deviceSelect.value;
+      if (selectedDeviceId) localStorage.setItem('translatorMicId', selectedDeviceId);
+    };
+
+    async function ensureIceConfig() {
+      try {
+        const res = await fetch('/api/ice');
+        const data = await res.json();
+        if (data.iceServers && data.iceServers.length > 0) iceServers = data.iceServers;
+      } catch (e) {
+        console.log('ICE config fetch failed, using defaults', e);
+      }
+    }
+
+    function updateMeter() {
+      if (!analyser || !isLive) {
+        bars.forEach(b => b.style.height = '6px');
+        return;
+      }
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      const step = Math.floor(data.length / bars.length);
+      bars.forEach((bar, i) => {
+        const value = isMuted ? 0 : data[i * step];
+        bar.style.height = Math.max(6, (value / 255) * 48) + 'px';
+      });
+      requestAnimationFrame(updateMeter);
+    }
+
+    async function goLive() {
+      hideError();
+
+      if (!micSupported()) {
+        showError(insecureContextMessage());
+        return;
+      }
+
+      connectBtn.disabled = true;
+      setStatus('waiting', 'Requesting microphone…');
+
+      try {
+        await ensureIceConfig();
+
+        const constraints = {
+          audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+        };
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        audioContext.createMediaStreamSource(localStream).connect(analyser);
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+        ws.onopen = () => {
+          setStatus('waiting', 'Connected — registering…');
+          ws.send(JSON.stringify({ type: 'register-source' }));
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            await handleMessage(JSON.parse(event.data));
+          } catch (e) {
+            console.error('message error', e);
+          }
+        };
+
+        ws.onclose = () => {
+          if (isLive) stop('Connection lost. Tap "Go Live" to reconnect.');
+        };
+
+        ws.onerror = () => {
+          showError('Connection failed. Make sure you are on the right network.');
+          stop();
+        };
+      } catch (e) {
+        console.error('goLive error', e);
+        showError('Could not start: ' + e.message);
+        stop();
+      }
+    }
+
+    async function handleMessage(data) {
+      switch (data.type) {
+        case 'source-registered':
+          isLive = true;
+          enterLiveUI();
+          updateMeter();
+          break;
+
+        case 'broadcaster-present':
+          setStatus('waiting', 'Broadcaster ready — connecting audio…');
+          await createOffer();
+          break;
+
+        case 'broadcaster-absent':
+          setStatus('waiting', 'Waiting for the server to start broadcasting…');
+          teardownPc();
+          break;
+
+        case 'source-answer':
+          if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          break;
+
+        case 'source-ice':
+          if (pc && data.candidate) {
+            if (data.candidate.candidate && data.candidate.candidate.includes('.local')) break;
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('addIceCandidate error', e);
+            }
+          }
+          break;
+      }
+    }
+
+    async function createOffer() {
+      teardownPc();
+      pc = new RTCPeerConnection({ iceServers });
+
+      localStream.getAudioTracks().forEach(track => pc.addTrack(track, localStream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          if (event.candidate.candidate && event.candidate.candidate.includes('.local')) return;
+          ws.send(JSON.stringify({ type: 'source-ice', candidate: event.candidate }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (!pc) return;
+        if (pc.connectionState === 'connected') {
+          reflectMuteStatus();
+        } else if (pc.connectionState === 'failed') {
+          setStatus('waiting', 'Audio connection failed — retrying…');
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: 'source-offer', sdp: pc.localDescription }));
+    }
+
+    function teardownPc() {
+      if (pc) {
+        try { pc.close(); } catch (e) {}
+        pc = null;
+      }
+    }
+
+    function reflectMuteStatus() {
+      if (isMuted) {
+        setStatus('muted', 'Live — muted');
+      } else {
+        setStatus('live', 'Live — your audio is broadcasting');
+      }
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      if (localStream) {
+        localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+      }
+      muteBtn.classList.toggle('muted', isMuted);
+      muteBtn.innerHTML = isMuted ? '🎤 Unmute' : '🔇 Mute';
+      reflectMuteStatus();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'source-status', muted: isMuted }));
+      }
+    }
+
+    function enterLiveUI() {
+      connectBtn.classList.add('hidden');
+      muteBtn.classList.remove('hidden');
+      stopBtn.classList.remove('hidden');
+      deviceSelect.disabled = true;
+      reflectMuteStatus();
+    }
+
+    function stop(message) {
+      isLive = false;
+      teardownPc();
+
+      if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+      if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+      if (audioContext) { try { audioContext.close(); } catch (e) {} audioContext = null; analyser = null; }
+
+      isMuted = false;
+      muteBtn.classList.add('hidden');
+      muteBtn.classList.remove('muted');
+      muteBtn.innerHTML = '🔇 Mute';
+      stopBtn.classList.add('hidden');
+      connectBtn.classList.remove('hidden');
+      connectBtn.disabled = false;
+      deviceSelect.disabled = false;
+      bars.forEach(b => b.style.height = '6px');
+
+      setStatus('', message || 'Not connected');
+      if (message) showError(message);
+    }
+
+    connectBtn.addEventListener('click', goLive);
+    muteBtn.addEventListener('click', toggleMute);
+    stopBtn.addEventListener('click', () => stop());
+
+    loadMicrophones();
+  </script>
+</body>
+</html>

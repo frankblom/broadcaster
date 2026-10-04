@@ -169,6 +169,61 @@
       color: #fff;
     }
 
+    /* Audio source toggle */
+    .source-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .source-option {
+      flex: 1;
+      padding: 12px 10px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .source-option:hover:not(:disabled) {
+      border-color: rgba(255, 107, 107, 0.5);
+    }
+
+    .source-option.active {
+      background: rgba(255, 107, 107, 0.2);
+      border-color: rgba(255, 107, 107, 0.5);
+      color: #fff;
+    }
+
+    .source-option:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Remote translator panel */
+    #remoteSourcePanel {
+      margin-bottom: 20px;
+    }
+
+    .translator-status {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .translator-status .status-icon {
+      flex-shrink: 0;
+    }
+
     /* Visualizer */
     .visualizer {
       height: 80px;
@@ -455,9 +510,26 @@
         </div>
 
         <div class="section-label">Audio Source</div>
+        <div class="source-toggle">
+          <button class="source-option active" id="srcLocalBtn">🎙️ Local microphone</button>
+          <button class="source-option" id="srcRemoteBtn">🌐 Remote translator</button>
+        </div>
+
         <select class="device-select visible" id="deviceSelect">
           <option value="">Select microphone...</option>
         </select>
+
+        <div id="remoteSourcePanel">
+          <div class="listener-url-label">Translator URL — open this on the translator's phone</div>
+          <div class="listener-url-container">
+            <div class="listener-url" id="translatorUrl">Loading...</div>
+            <button class="copy-btn" id="copyTranslatorBtn" title="Copy URL">Copy</button>
+          </div>
+          <div class="translator-status" id="translatorStatus">
+            <div class="status-icon paused"></div>
+            <span id="translatorStatusText">Translator not connected</span>
+          </div>
+        </div>
 
         <div class="visualizer" id="visualizer"></div>
 
@@ -515,6 +587,16 @@
     let lastBytesSent = 0;
     let lastBitrateTime = 0;
 
+    // Audio source: 'local' (machine mic) or 'remote' (translator in a browser)
+    let sourceMode = localStorage.getItem('audioSourceMode') || 'local';
+    let sourcePc = null; // RTCPeerConnection receiving audio from the translator
+    let remoteStream = null; // MediaStream arriving from the translator
+    let pendingListeners = []; // listeners that joined before a source stream was ready
+    let iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+
     // DOM elements
     const broadcastButton = document.getElementById('broadcastButton');
     const broadcastIcon = document.getElementById('broadcastIcon');
@@ -528,6 +610,11 @@
     const listenerNamesEl = document.getElementById('listenerNames');
     const durationEl = document.getElementById('duration');
     const bitrateEl = document.getElementById('bitrate');
+    const srcLocalBtn = document.getElementById('srcLocalBtn');
+    const srcRemoteBtn = document.getElementById('srcRemoteBtn');
+    const remoteSourcePanel = document.getElementById('remoteSourcePanel');
+    const translatorStatusEl = document.getElementById('translatorStatus');
+    const translatorStatusText = document.getElementById('translatorStatusText');
 
     // Create visualizer bars
     for (let i = 0; i < 30; i++) {
@@ -578,8 +665,48 @@
       }
     };
 
-    // Load microphones on page load
+    // Reflect the selected audio source (local mic vs remote translator) in the UI
+    function applySourceMode() {
+      const local = sourceMode === 'local';
+      srcLocalBtn.classList.toggle('active', local);
+      srcRemoteBtn.classList.toggle('active', !local);
+      deviceSelect.style.display = local ? 'block' : 'none';
+      remoteSourcePanel.style.display = local ? 'none' : 'block';
+    }
+
+    function setSourceMode(mode) {
+      if (isBroadcasting) return; // locked while broadcasting
+      sourceMode = mode;
+      localStorage.setItem('audioSourceMode', mode);
+      applySourceMode();
+    }
+
+    srcLocalBtn.addEventListener('click', () => setSourceMode('local'));
+    srcRemoteBtn.addEventListener('click', () => setSourceMode('remote'));
+    applySourceMode();
+
+    function setSourceButtonsEnabled(enabled) {
+      srcLocalBtn.disabled = !enabled;
+      srcRemoteBtn.disabled = !enabled;
+    }
+
+    // Fetch ICE server config (STUN + optional TURN) from the server
+    async function ensureIceConfig() {
+      try {
+        const apiBase = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
+        const res = await fetch(`${apiBase}/api/ice`);
+        const data = await res.json();
+        if (data.iceServers && data.iceServers.length > 0) {
+          iceServers = data.iceServers;
+        }
+      } catch (e) {
+        console.log('Could not fetch ICE config, using defaults:', e);
+      }
+    }
+
+    // Load microphones and ICE config on page load
     loadMicrophones();
+    ensureIceConfig();
 
     function showError(message) {
       errorEl.textContent = message;
@@ -619,6 +746,28 @@
       statusText.textContent = status;
       statusDot.classList.toggle('connected', isConnected && !broadcasting);
       statusDot.classList.toggle('broadcasting', broadcasting);
+    }
+
+    // Update the remote-translator status line. state: 'waiting' | 'connected' | 'muted'
+    function updateTranslatorStatus(state, text) {
+      const icon = translatorStatusEl.querySelector('.status-icon');
+      icon.className = 'status-icon ' + (
+        state === 'connected' ? 'listening' :
+        state === 'muted' ? 'connecting' : 'paused'
+      );
+      translatorStatusText.textContent = text;
+    }
+
+    // Build an analyser from a stream so the visualizer reflects the live audio
+    function setupAnalyser(stream) {
+      if (audioContext) {
+        try { audioContext.close(); } catch (e) {}
+      }
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
     }
 
     function formatDuration(seconds) {
@@ -710,14 +859,20 @@
       updateStatus('Starting...');
 
       try {
-        localStream = await getAudioStream();
+        await ensureIceConfig();
 
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-
-        const source = audioContext.createMediaStreamSource(localStream);
-        source.connect(analyser);
+        if (sourceMode === 'local') {
+          // Capture the local machine's microphone immediately
+          localStream = await getAudioStream();
+          setupAnalyser(localStream);
+        } else {
+          // Remote mode: audio arrives from the translator's browser later.
+          // We register as broadcaster and wait for the translator to connect.
+          localStream = null;
+          remoteStream = null;
+          pendingListeners = [];
+          updateTranslatorStatus('waiting', 'Waiting for translator to connect…');
+        }
 
         // When loaded via file://, connect to localhost; otherwise use current host
         const wsHost = window.location.protocol === 'file:'
@@ -769,12 +924,53 @@
           bitrateInterval = setInterval(updateBitrate, 1000);
           lastBytesSent = 0;
           lastBitrateTime = 0;
-          updateStatus('Broadcasting', true, true);
+          updateStatus(sourceMode === 'remote' ? 'Broadcasting (waiting for translator)' : 'Broadcasting', true, true);
           broadcastButton.disabled = false;
           broadcastButton.className = 'broadcast-button stop';
           broadcastIcon.textContent = '⏹';
           broadcastText.textContent = 'Stop Broadcasting';
+          setSourceButtonsEnabled(false);
           updateVisualizer();
+          break;
+
+        // A remote translator is available; it will send us an offer shortly
+        case 'source-available':
+          if (sourceMode === 'remote') {
+            updateTranslatorStatus('waiting', 'Translator connecting…');
+          }
+          break;
+
+        // Translator sent an SDP offer for its audio stream
+        case 'source-offer':
+          await handleSourceOffer(data.sdp);
+          break;
+
+        // ICE candidate from the translator leg
+        case 'source-ice':
+          if (sourcePc && data.candidate) {
+            if (data.candidate.candidate && data.candidate.candidate.includes('.local')) break;
+            try {
+              await sourcePc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('Error adding source ICE candidate:', e);
+            }
+          }
+          break;
+
+        // Translator muted / unmuted their microphone
+        case 'source-status':
+          if (remoteStream) {
+            if (data.muted) {
+              updateTranslatorStatus('muted', 'Translator connected — muted');
+            } else {
+              updateTranslatorStatus('connected', 'Translator connected — live');
+            }
+          }
+          break;
+
+        // Translator disconnected
+        case 'source-gone':
+          handleSourceGone();
           break;
 
         case 'broadcaster-rejected':
@@ -787,6 +983,7 @@
           break;
 
         case 'listener-left':
+          pendingListeners = pendingListeners.filter(id => id !== data.listenerId);
           const pc = peerConnections.get(data.listenerId);
           if (pc) {
             if (pc.clonedStream) {
@@ -830,12 +1027,16 @@
     }
 
     async function createPeerConnectionForListener(listenerId) {
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
+      // In remote mode a listener may join before the translator's audio is
+      // available. Queue them and connect once we have a source stream.
+      if (!localStream || localStream.getAudioTracks().length === 0) {
+        if (!pendingListeners.includes(listenerId)) {
+          pendingListeners.push(listenerId);
+        }
+        return;
+      }
+
+      const pc = new RTCPeerConnection({ iceServers });
 
       peerConnections.set(listenerId, pc);
 
@@ -843,7 +1044,8 @@
       localStream.getAudioTracks().forEach(track => {
         const clonedTrack = track.clone();
         clonedStream.addTrack(clonedTrack);
-        pc.addTrack(clonedTrack, clonedStream);
+        const sender = pc.addTrack(clonedTrack, clonedStream);
+        if (!pc.audioSender) pc.audioSender = sender;
       });
 
       pc.clonedStream = clonedStream;
@@ -881,6 +1083,93 @@
       }));
     }
 
+    // Receive the translator's audio stream and make it the broadcast source
+    async function handleSourceOffer(sdp) {
+      try {
+        if (!sourcePc) {
+          sourcePc = new RTCPeerConnection({ iceServers });
+
+          sourcePc.onicecandidate = (event) => {
+            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+              if (event.candidate.candidate && event.candidate.candidate.includes('.local')) return;
+              ws.send(JSON.stringify({ type: 'source-ice', candidate: event.candidate }));
+            }
+          };
+
+          sourcePc.ontrack = (event) => {
+            remoteStream = event.streams[0] || new MediaStream([event.track]);
+            localStream = remoteStream; // this becomes what we forward to listeners
+            setupAnalyser(remoteStream);
+            updateTranslatorStatus('connected', 'Translator connected — live');
+            updateStatus('Broadcasting', true, true);
+            updateVisualizer();
+
+            // Connect any listeners that were queued waiting for a source...
+            flushPendingListeners();
+            // ...and swap the live track into any listeners already connected
+            // (e.g. after the translator dropped and reconnected).
+            updateListenerTracks();
+          };
+
+          sourcePc.onconnectionstatechange = () => {
+            console.log(`Source connection state: ${sourcePc.connectionState}`);
+          };
+        }
+
+        await sourcePc.setRemoteDescription(new RTCSessionDescription(sdp));
+        const answer = await sourcePc.createAnswer();
+        await sourcePc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'source-answer', sdp: sourcePc.localDescription }));
+      } catch (e) {
+        console.error('Error handling source offer:', e);
+      }
+    }
+
+    // Connect any listeners that were waiting for a source stream
+    function flushPendingListeners() {
+      const waiting = pendingListeners.slice();
+      pendingListeners = [];
+      waiting.forEach(id => createPeerConnectionForListener(id));
+    }
+
+    // Replace the outgoing audio track on every listener (used when the
+    // translator reconnects) without renegotiating each connection.
+    function updateListenerTracks() {
+      const srcTrack = localStream && localStream.getAudioTracks()[0];
+      if (!srcTrack) return;
+      peerConnections.forEach(pc => {
+        if (pc.audioSender) {
+          const clone = srcTrack.clone();
+          try {
+            pc.audioSender.replaceTrack(clone);
+            if (pc.clonedStream) pc.clonedStream.getTracks().forEach(t => t.stop());
+            const newStream = new MediaStream([clone]);
+            pc.clonedStream = newStream;
+          } catch (e) {
+            console.error('Error replacing listener track:', e);
+          }
+        }
+      });
+    }
+
+    // The translator disconnected — pause audio but keep the broadcast alive
+    function handleSourceGone() {
+      updateTranslatorStatus('waiting', 'Translator disconnected — waiting to reconnect…');
+      if (sourcePc) {
+        try { sourcePc.close(); } catch (e) {}
+        sourcePc = null;
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(t => t.stop());
+        remoteStream = null;
+      }
+      // Keep localStream referencing the (now ended) tracks so new listeners are
+      // still wired up; audio resumes via replaceTrack when a translator returns.
+      if (isBroadcasting) {
+        updateStatus('Broadcasting (waiting for translator)', true, true);
+      }
+    }
+
     function stopBroadcast() {
       isBroadcasting = false;
       broadcastStartTime = null;
@@ -903,6 +1192,17 @@
       });
       peerConnections.clear();
 
+      // Tear down the remote translator connection, if any
+      if (sourcePc) {
+        try { sourcePc.close(); } catch (e) {}
+        sourcePc = null;
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(t => t.stop());
+        remoteStream = null;
+      }
+      pendingListeners = [];
+
       if (ws) {
         ws.close();
         ws = null;
@@ -919,6 +1219,8 @@
         analyser = null;
       }
 
+      setSourceButtonsEnabled(true);
+      updateTranslatorStatus('waiting', 'Translator not connected');
       updateStatus('Not Broadcasting');
       broadcastButton.disabled = false;
       broadcastButton.className = 'broadcast-button start';
@@ -934,9 +1236,12 @@
     // Listener URL elements
     const listenerUrlEl = document.getElementById('listenerUrl');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
+    const translatorUrlEl = document.getElementById('translatorUrl');
+    const copyTranslatorBtn = document.getElementById('copyTranslatorBtn');
     let currentListenerUrl = '';
+    let currentTranslatorUrl = '';
 
-    // Fetch listener URL from server
+    // Fetch listener + translator URLs from server
     function fetchListenerUrl() {
       const apiBase = window.location.protocol === 'file:'
         ? 'http://localhost:3000'
@@ -954,11 +1259,36 @@
             listenerUrlEl.textContent = 'http://localhost:3000';
             currentListenerUrl = 'http://localhost:3000';
           }
+
+          if (data.translatorUrls && data.translatorUrls.length > 0) {
+            currentTranslatorUrl = data.translatorUrls[0];
+          } else {
+            currentTranslatorUrl = (currentListenerUrl || 'http://localhost:3000') + '/translate';
+          }
+          translatorUrlEl.textContent = currentTranslatorUrl;
+          translatorUrlEl.title = currentTranslatorUrl;
         })
         .catch(() => {
           listenerUrlEl.textContent = 'Server not running';
+          translatorUrlEl.textContent = 'Server not running';
         });
     }
+
+    // Copy translator URL to clipboard
+    copyTranslatorBtn.addEventListener('click', async () => {
+      if (!currentTranslatorUrl) return;
+      try {
+        await navigator.clipboard.writeText(currentTranslatorUrl);
+        copyTranslatorBtn.textContent = 'Copied!';
+        copyTranslatorBtn.classList.add('copied');
+        setTimeout(() => {
+          copyTranslatorBtn.textContent = 'Copy';
+          copyTranslatorBtn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    });
 
     // Copy URL to clipboard
     copyUrlBtn.addEventListener('click', async () => {

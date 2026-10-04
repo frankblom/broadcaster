@@ -10,6 +10,16 @@ let serverStarted = false;
 function startServer() {
   if (serverStarted) return;
   serverStarted = true;
+
+  // Enable HTTPS (alongside HTTP) so remote devices — a translator joining from a
+  // phone — can use their microphone. getUserMedia only works in a secure context,
+  // which over a LAN IP means HTTPS. The HTTP listener stays up on localhost for
+  // this window's own broadcaster, so nothing here needs to trust the self-signed
+  // cert. Respect an explicit override if the user set their own env vars.
+  if (!process.env.HTTPS && !process.env.SSL_CERT) {
+    process.env.HTTPS = 'true';
+  }
+
   require('./server.js');
 }
 
