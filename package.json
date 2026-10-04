@@ -1,6 +1,6 @@
 {
   "name": "audio-broadcaster",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Real-time audio broadcasting application",
   "main": "main.js",
   "scripts": {
@@ -17,6 +17,7 @@
   "dependencies": {
     "electron-updater": "^6.3.9",
     "express": "^4.18.2",
+    "selfsigned": "^2.4.1",
     "ws": "^8.16.0"
   },
   "devDependencies": {
