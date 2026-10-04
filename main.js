@@ -1,10 +1,62 @@
-const { app, BrowserWindow, shell, dialog } = require('electron');
+const { app, BrowserWindow, shell, dialog, ipcMain, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
+// The HTTP port the local server listens on, using the same precedence as
+// server.js (PORT env var > saved setting > default). The broadcaster window is
+// loaded over file:// and talks to http://localhost:<port>, so it needs to know
+// which port was chosen. Resolved after SETTINGS_PATH is set in startServer().
+function localHttpPort() {
+  if (Number(process.env.PORT)) return Number(process.env.PORT);
+  try {
+    return require('./settings').load().server.httpPort;
+  } catch (e) {
+    return 3000;
+  }
+}
+
 // Keep a global reference of the window object
 let mainWindow = null;
+let settingsWindow = null;
 let serverStarted = false;
+
+// Open (or focus) the standalone Settings window. It loads over file:// like the
+// main window and talks to the local server's /api/settings, so it needs the
+// same httpPort. When it closes we tell the main window to refresh anything a
+// setting may have changed (e.g. the shared listener URL after an mDNS change).
+function openSettingsWindow() {
+  if (settingsWindow) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 480,
+    height: 560,
+    minWidth: 420,
+    minHeight: 420,
+    parent: mainWindow || undefined,
+    title: 'Settings',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Use the standard window menu role instead of the app menu bar on this window.
+  settingsWindow.setMenuBarVisibility(false);
+
+  settingsWindow.loadFile('settings.html', {
+    query: { httpPort: String(localHttpPort()) },
+  });
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('settings-changed');
+    }
+  });
+}
 
 // Start the Express server
 function startServer() {
@@ -20,6 +72,12 @@ function startServer() {
     process.env.HTTPS = 'true';
   }
 
+  // Persist user settings (mDNS config) in the per-user data directory, which
+  // stays writable even though the packaged app itself is read-only (asar).
+  if (!process.env.SETTINGS_PATH) {
+    process.env.SETTINGS_PATH = path.join(app.getPath('userData'), 'app-settings.json');
+  }
+
   require('./server.js');
 }
 
@@ -32,12 +90,17 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
-  // Wait a moment for the server to be ready, then load broadcast.html
+  // Wait a moment for the server to be ready, then load broadcast.html. Pass the
+  // chosen HTTP port along so the page (which runs over file://) connects to the
+  // right localhost port instead of assuming the default.
   setTimeout(() => {
-    mainWindow.loadFile('broadcast.html');
+    mainWindow.loadFile('broadcast.html', {
+      query: { httpPort: String(localHttpPort()) },
+    });
   }, 500);
 
   // Open external links in browser
@@ -51,8 +114,55 @@ function createWindow() {
   });
 }
 
+// Build an application menu that keeps the standard roles (so copy/paste in the
+// settings inputs, window controls, etc. still work) and adds a Settings item
+// with the platform-standard accelerator (Cmd+, on macOS, Ctrl+, elsewhere).
+function buildMenu() {
+  const isMac = process.platform === 'darwin';
+  const settingsItem = {
+    label: 'Settings…',
+    accelerator: 'CmdOrCtrl+,',
+    click: openSettingsWindow,
+  };
+
+  const template = [
+    ...(isMac ? [{
+      role: 'appMenu',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        settingsItem,
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    }] : []),
+    {
+      label: 'File',
+      submenu: [
+        ...(isMac ? [] : [settingsItem, { type: 'separator' }]),
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// Renderer (via preload) asks to open the Settings window.
+ipcMain.on('open-settings', openSettingsWindow);
+
 app.whenReady().then(() => {
   startServer();
+  buildMenu();
   createWindow();
 
   app.on('activate', () => {

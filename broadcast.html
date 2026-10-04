@@ -169,6 +169,34 @@
       color: #fff;
     }
 
+    /* Main card header (title + settings button) */
+    .main-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .main-card-header h1 {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .settings-btn {
+      padding: 8px 14px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .settings-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
     /* Audio source toggle */
     .source-toggle {
       display: flex;
@@ -490,6 +518,11 @@
     <div class="main-panel">
       <!-- Stats & Settings -->
       <div class="card">
+        <div class="main-card-header">
+          <h1>Broadcaster</h1>
+          <button class="settings-btn" id="settingsBtn" title="Settings">⚙ Settings</button>
+        </div>
+
         <div class="error-message" id="error"></div>
 
         <div class="stats-grid">
@@ -572,6 +605,14 @@
   </div>
 
   <script>
+    // When running inside the Electron app, this page loads over file:// and talks
+    // to its own local server over plain HTTP on localhost. The HTTP port is
+    // configurable (Settings → Server ports) and passed in by the Electron main
+    // process via ?httpPort=; it falls back to the default when not provided.
+    const LOCAL_HTTP_PORT = new URLSearchParams(window.location.search).get('httpPort') || '3000';
+    const LOCAL_HTTP_HOST = `localhost:${LOCAL_HTTP_PORT}`;
+    const LOCAL_HTTP_ORIGIN = `http://${LOCAL_HTTP_HOST}`;
+
     // State
     let dashboardWs = null; // WebSocket for receiving client list (always connected)
     let ws = null; // WebSocket for broadcasting (only when broadcasting)
@@ -693,7 +734,7 @@
     // Fetch ICE server config (STUN + optional TURN) from the server
     async function ensureIceConfig() {
       try {
-        const apiBase = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
+        const apiBase = window.location.protocol === 'file:' ? LOCAL_HTTP_ORIGIN : '';
         const res = await fetch(`${apiBase}/api/ice`);
         const data = await res.json();
         if (data.iceServers && data.iceServers.length > 0) {
@@ -876,7 +917,7 @@
 
         // When loaded via file://, connect to localhost; otherwise use current host
         const wsHost = window.location.protocol === 'file:'
-          ? 'localhost:3000'
+          ? LOCAL_HTTP_HOST
           : window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${wsHost}`);
@@ -1244,7 +1285,7 @@
     // Fetch listener + translator URLs from server
     function fetchListenerUrl() {
       const apiBase = window.location.protocol === 'file:'
-        ? 'http://localhost:3000'
+        ? LOCAL_HTTP_ORIGIN
         : '';
 
       fetch(`${apiBase}/api/status`)
@@ -1256,14 +1297,14 @@
             listenerUrlEl.textContent = currentListenerUrl;
             listenerUrlEl.title = currentListenerUrl;
           } else {
-            listenerUrlEl.textContent = 'http://localhost:3000';
-            currentListenerUrl = 'http://localhost:3000';
+            listenerUrlEl.textContent = LOCAL_HTTP_ORIGIN;
+            currentListenerUrl = LOCAL_HTTP_ORIGIN;
           }
 
           if (data.translatorUrls && data.translatorUrls.length > 0) {
             currentTranslatorUrl = data.translatorUrls[0];
           } else {
-            currentTranslatorUrl = (currentListenerUrl || 'http://localhost:3000') + '/translate';
+            currentTranslatorUrl = (currentListenerUrl || LOCAL_HTTP_ORIGIN) + '/translate';
           }
           translatorUrlEl.textContent = currentTranslatorUrl;
           translatorUrlEl.title = currentTranslatorUrl;
@@ -1312,7 +1353,7 @@
       if (dashboardWs && dashboardWs.readyState === WebSocket.OPEN) return;
 
       const wsHost = window.location.protocol === 'file:'
-        ? 'localhost:3000'
+        ? LOCAL_HTTP_HOST
         : window.location.host;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       dashboardWs = new WebSocket(`${protocol}//${wsHost}`);
@@ -1344,6 +1385,29 @@
       dashboardWs.onerror = (error) => {
         console.error('Dashboard WebSocket error:', error);
       };
+    }
+
+    // API base: inside the Electron app (file://) talk to the local server over
+    // HTTP; when served over the network use the current origin. Used by the
+    // listener-URL fetch and the ICE config request above.
+    const API_BASE = window.location.protocol === 'file:'
+      ? LOCAL_HTTP_ORIGIN
+      : '';
+
+    // --- Settings ---
+    // All adjustable options (mDNS / friendly name, server ports) now live in a
+    // separate Settings window, opened from the ⚙ Settings button or the app's
+    // Settings menu (Cmd+,). When that window closes the main process fires
+    // 'settings-changed', so we refresh the shared URLs that an mDNS change
+    // affects.
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (window.electronAPI) {
+      settingsBtn.addEventListener('click', () => window.electronAPI.openSettings());
+      window.electronAPI.onSettingsChanged(() => fetchListenerUrl());
+    } else {
+      // Opened directly in a browser (not the Electron app) — there's no separate
+      // window to open, so hide the button.
+      settingsBtn.style.display = 'none';
     }
 
     // Initial setup
