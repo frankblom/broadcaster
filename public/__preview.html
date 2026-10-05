@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Broadcaster - Broadcast</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .page-layout {
+      display: flex;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      min-height: calc(100vh - 40px);
+    }
+
+    .main-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .sidebar {
+      width: 300px;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .card-header h1 {
+      font-size: 24px;
+    }
+
+    .card-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+    }
+
+    .status-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #666;
+      transition: background 0.3s;
+      display: inline-block;
+    }
+
+    .status-dot.connected {
+      background: #00ff88;
+      box-shadow: 0 0 10px #00ff88;
+    }
+
+    .status-dot.broadcasting {
+      background: #ff6b6b;
+      box-shadow: 0 0 10px #ff6b6b;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .error-message {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .error-message.visible {
+      display: block;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-item {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 5px;
+    }
+
+    /* Source selection */
+    .section-label {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 12px;
+    }
+
+    .device-select {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      cursor: pointer;
+      display: none;
+      margin-bottom: 20px;
+    }
+
+    .device-select.visible {
+      display: block;
+    }
+
+    .device-select option {
+      background: #1a1a2e;
+      color: #fff;
+    }
+
+    /* Network sharing (mDNS) settings */
+    .mdns-settings {
+      margin-bottom: 20px;
+    }
+
+    .mdns-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+      cursor: pointer;
+    }
+
+    .mdns-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #ff6b6b;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .mdns-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin: -10px 0 12px;
+      word-break: break-all;
+    }
+
+    #mdnsOptions.hidden {
+      display: none;
+    }
+
+    /* Audio source toggle */
+    .source-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .source-option {
+      flex: 1;
+      padding: 12px 10px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .source-option:hover:not(:disabled) {
+      border-color: rgba(255, 107, 107, 0.5);
+    }
+
+    .source-option.active {
+      background: rgba(255, 107, 107, 0.2);
+      border-color: rgba(255, 107, 107, 0.5);
+      color: #fff;
+    }
+
+    .source-option:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Remote translator panel */
+    #remoteSourcePanel {
+      margin-bottom: 20px;
+    }
+
+    .translator-status {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .translator-status .status-icon {
+      flex-shrink: 0;
+    }
+
+    /* Visualizer */
+    .visualizer {
+      height: 80px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 3px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .bar {
+      width: 6px;
+      background: linear-gradient(to top, #ff6b6b, #ee5a5a);
+      border-radius: 3px;
+      transition: height 0.1s;
+      height: 10px;
+    }
+
+    /* Broadcast button */
+    .broadcast-button {
+      width: 100%;
+      padding: 18px 30px;
+      font-size: 18px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .broadcast-button.start {
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      color: white;
+    }
+
+    .broadcast-button.stop {
+      background: linear-gradient(135deg, #666 0%, #555 100%);
+      color: white;
+    }
+
+    .broadcast-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+    }
+
+    .broadcast-button:active {
+      transform: translateY(0);
+    }
+
+    .broadcast-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Sidebar - Listeners */
+    .sidebar .card {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .listener-count-display {
+      text-align: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .listener-count-number {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .listener-count-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .listeners-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .listeners-list-header {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .listener-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.2);
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+
+    .listener-avatar {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .listener-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .listener-status {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .status-icon {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .status-icon.connecting {
+      background: #ffaa00;
+      box-shadow: 0 0 8px #ffaa00;
+      animation: pulse 1.5s infinite;
+    }
+
+    .status-icon.listening {
+      background: #00ff88;
+      box-shadow: 0 0 10px #00ff88;
+    }
+
+    .status-icon.paused {
+      background: #666;
+    }
+
+    .no-listeners {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      font-style: italic;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .info {
+      margin-top: auto;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .info a {
+      color: #ff6b6b;
+      text-decoration: none;
+    }
+
+    .listener-url-box {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .listener-url-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+    }
+
+    .listener-url-container {
+      display: flex;
+      gap: 8px;
+    }
+
+    .listener-url {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .copy-btn {
+      background: rgba(255, 107, 107, 0.2);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #ff6b6b;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255, 107, 107, 0.3);
+    }
+
+    .copy-btn.copied {
+      background: rgba(0, 255, 136, 0.2);
+      border-color: rgba(0, 255, 136, 0.3);
+      color: #00ff88;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .page-layout {
+        flex-direction: column;
+      }
+
+      .sidebar {
+        width: 100%;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 500px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+    <!-- Main Panel -->
+    <div class="main-panel">
+      <!-- Stats & Settings -->
+      <div class="card">
+        <div class="error-message" id="error"></div>
+
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value">
+              <span class="status-dot" id="statusDot"></span>
+            </div>
+            <div class="stat-label" id="statusText">Not Broadcasting</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="duration">0:00</div>
+            <div class="stat-label">Duration</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="bitrate">--</div>
+            <div class="stat-label">Bitrate</div>
+          </div>
+        </div>
+
+        <div class="section-label">Audio Source</div>
+        <div class="source-toggle">
+          <button class="source-option active" id="srcLocalBtn">🎙️ Local microphone</button>
+          <button class="source-option" id="srcRemoteBtn">🌐 Remote translator</button>
+        </div>
+
+        <select class="device-select visible" id="deviceSelect">
+          <option value="">Select microphone...</option>
+        </select>
+
+        <div id="remoteSourcePanel">
+          <div class="listener-url-label">Translator URL — open this on the translator's phone</div>
+          <div class="listener-url-container">
+            <div class="listener-url" id="translatorUrl">Loading...</div>
+            <button class="copy-btn" id="copyTranslatorBtn" title="Copy URL">Copy</button>
+          </div>
+          <div class="translator-status" id="translatorStatus">
+            <div class="status-icon paused"></div>
+            <span id="translatorStatusText">Translator not connected</span>
+          </div>
+        </div>
+
+        <div class="visualizer" id="visualizer"></div>
+
+        <button class="broadcast-button start" id="broadcastButton" onclick="toggleBroadcast()">
+          <span id="broadcastIcon">📡</span>
+          <span id="broadcastText">Start Broadcasting</span>
+        </button>
+
+        <div class="section-label">Network sharing</div>
+        <div class="mdns-settings">
+          <label class="mdns-row" for="mdnsEnabled">
+            <span>Share a friendly name (mDNS)</span>
+            <input type="checkbox" id="mdnsEnabled">
+          </label>
+          <div id="mdnsOptions">
+            <input type="text" class="device-select visible" id="mdnsHostname"
+                   placeholder="audiocaster" autocomplete="off" spellcheck="false"
+                   style="cursor: text; margin-bottom: 10px;">
+            <div class="mdns-hint" id="mdnsHint"></div>
+            <select class="device-select visible" id="mdnsInterface">
+              <option value="">All network interfaces</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="listener-url-box">
+          <div class="listener-url-label">Listener URL</div>
+          <div class="listener-url-container">
+            <div class="listener-url" id="listenerUrl">Loading...</div>
+            <button class="copy-btn" id="copyUrlBtn" title="Copy URL">Copy</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Sidebar - Connected Clients -->
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-header">
+          <h2>Connected Clients</h2>
+        </div>
+
+        <div class="listener-count-display">
+          <div class="listener-count-number" id="sidebarListenerCount">0</div>
+          <div class="listener-count-label">Online</div>
+        </div>
+
+        <div class="listeners-list" id="listenersList">
+          <div class="listeners-list-header">Active Connections</div>
+          <div id="listenerNames">
+            <div class="no-listeners">No listeners connected yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let dashboardWs = null; // WebSocket for receiving client list (always connected)
+    let ws = null; // WebSocket for broadcasting (only when broadcasting)
+    let localStream = null;
+    let peerConnections = new Map(); // listenerId -> RTCPeerConnection
+    let audioContext = null;
+    let analyser = null;
+    let isBroadcasting = false;
+    let selectedDeviceId = null;
+    let broadcastStartTime = null;
+    let durationInterval = null;
+    let bitrateInterval = null;
+    let lastBytesSent = 0;
+    let lastBitrateTime = 0;
+
+    // Audio source: 'local' (machine mic) or 'remote' (translator in a browser)
+    let sourceMode = localStorage.getItem('audioSourceMode') || 'local';
+    let sourcePc = null; // RTCPeerConnection receiving audio from the translator
+    let remoteStream = null; // MediaStream arriving from the translator
+    let pendingListeners = []; // listeners that joined before a source stream was ready
+    let iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+
+    // DOM elements
+    const broadcastButton = document.getElementById('broadcastButton');
+    const broadcastIcon = document.getElementById('broadcastIcon');
+    const broadcastText = document.getElementById('broadcastText');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const sidebarListenerCount = document.getElementById('sidebarListenerCount');
+    const visualizer = document.getElementById('visualizer');
+    const errorEl = document.getElementById('error');
+    const deviceSelect = document.getElementById('deviceSelect');
+    const listenerNamesEl = document.getElementById('listenerNames');
+    const durationEl = document.getElementById('duration');
+    const bitrateEl = document.getElementById('bitrate');
+    const srcLocalBtn = document.getElementById('srcLocalBtn');
+    const srcRemoteBtn = document.getElementById('srcRemoteBtn');
+    const remoteSourcePanel = document.getElementById('remoteSourcePanel');
+    const translatorStatusEl = document.getElementById('translatorStatus');
+    const translatorStatusText = document.getElementById('translatorStatusText');
+
+    // Create visualizer bars
+    for (let i = 0; i < 30; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      visualizer.appendChild(bar);
+    }
+    const bars = visualizer.querySelectorAll('.bar');
+
+    // Load available microphones
+    async function loadMicrophones() {
+      try {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const mics = devices.filter(d => d.kind === 'audioinput');
+
+        deviceSelect.innerHTML = '<option value="">Select microphone...</option>';
+        mics.forEach(mic => {
+          const option = document.createElement('option');
+          option.value = mic.deviceId;
+          option.textContent = mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`;
+          deviceSelect.appendChild(option);
+        });
+
+        // Try to restore saved device, otherwise use first available
+        const savedDeviceId = localStorage.getItem('selectedMicrophoneId');
+        const savedDeviceExists = savedDeviceId && mics.some(m => m.deviceId === savedDeviceId);
+
+        if (savedDeviceExists) {
+          deviceSelect.value = savedDeviceId;
+          selectedDeviceId = savedDeviceId;
+        } else if (mics.length > 0) {
+          deviceSelect.value = mics[0].deviceId;
+          selectedDeviceId = mics[0].deviceId;
+        }
+      } catch (e) {
+        console.log('Could not enumerate devices:', e);
+      }
+    }
+
+    deviceSelect.onchange = () => {
+      selectedDeviceId = deviceSelect.value;
+      // Save selection to localStorage
+      if (selectedDeviceId) {
+        localStorage.setItem('selectedMicrophoneId', selectedDeviceId);
+      }
+    };
+
+    // Reflect the selected audio source (local mic vs remote translator) in the UI
+    function applySourceMode() {
+      const local = sourceMode === 'local';
+      srcLocalBtn.classList.toggle('active', local);
+      srcRemoteBtn.classList.toggle('active', !local);
+      deviceSelect.style.display = local ? 'block' : 'none';
+      remoteSourcePanel.style.display = local ? 'none' : 'block';
+    }
+
+    function setSourceMode(mode) {
+      if (isBroadcasting) return; // locked while broadcasting
+      sourceMode = mode;
+      localStorage.setItem('audioSourceMode', mode);
+      applySourceMode();
+    }
+
+    srcLocalBtn.addEventListener('click', () => setSourceMode('local'));
+    srcRemoteBtn.addEventListener('click', () => setSourceMode('remote'));
+    applySourceMode();
+
+    function setSourceButtonsEnabled(enabled) {
+      srcLocalBtn.disabled = !enabled;
+      srcRemoteBtn.disabled = !enabled;
+    }
+
+    // Fetch ICE server config (STUN + optional TURN) from the server
+    async function ensureIceConfig() {
+      try {
+        const apiBase = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
+        const res = await fetch(`${apiBase}/api/ice`);
+        const data = await res.json();
+        if (data.iceServers && data.iceServers.length > 0) {
+          iceServers = data.iceServers;
+        }
+      } catch (e) {
+        console.log('Could not fetch ICE config, using defaults:', e);
+      }
+    }
+
+    // Load microphones and ICE config on page load
+    loadMicrophones();
+    ensureIceConfig();
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.add('visible');
+    }
+
+    function hideError() {
+      errorEl.classList.remove('visible');
+    }
+
+    function updateClientList(list) {
+      if (!list || list.length === 0) {
+        listenerNamesEl.innerHTML = '<div class="no-listeners">No clients connected yet</div>';
+      } else {
+        listenerNamesEl.innerHTML = list.map(l => {
+          const initial = l.name.charAt(0).toUpperCase();
+          const status = l.status || 'connecting';
+          const statusTitle = status.charAt(0).toUpperCase() + status.slice(1);
+          return `<div class="listener-item">
+            <div class="listener-avatar">${escapeHtml(initial)}</div>
+            <div class="listener-name">${escapeHtml(l.name)}</div>
+            <div class="listener-status" title="${statusTitle}">
+              <div class="status-icon ${status}"></div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function updateStatus(status, isConnected = false, broadcasting = false) {
+      statusText.textContent = status;
+      statusDot.classList.toggle('connected', isConnected && !broadcasting);
+      statusDot.classList.toggle('broadcasting', broadcasting);
+    }
+
+    // Update the remote-translator status line. state: 'waiting' | 'connected' | 'muted'
+    function updateTranslatorStatus(state, text) {
+      const icon = translatorStatusEl.querySelector('.status-icon');
+      icon.className = 'status-icon ' + (
+        state === 'connected' ? 'listening' :
+        state === 'muted' ? 'connecting' : 'paused'
+      );
+      translatorStatusText.textContent = text;
+    }
+
+    // Build an analyser from a stream so the visualizer reflects the live audio
+    function setupAnalyser(stream) {
+      if (audioContext) {
+        try { audioContext.close(); } catch (e) {}
+      }
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+    }
+
+    function formatDuration(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateDuration() {
+      if (broadcastStartTime) {
+        const elapsed = Math.floor((Date.now() - broadcastStartTime) / 1000);
+        durationEl.textContent = formatDuration(elapsed);
+      }
+    }
+
+    async function updateBitrate() {
+      if (!isBroadcasting || peerConnections.size === 0) {
+        return;
+      }
+
+      let totalBytesSent = 0;
+
+      for (const pc of peerConnections.values()) {
+        try {
+          const stats = await pc.getStats();
+          stats.forEach(report => {
+            if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+              totalBytesSent += report.bytesSent || 0;
+            }
+          });
+        } catch (e) {
+          // Ignore stats errors
+        }
+      }
+
+      const now = Date.now();
+      if (lastBitrateTime > 0 && totalBytesSent > lastBytesSent) {
+        const timeDiff = (now - lastBitrateTime) / 1000; // seconds
+        const bytesDiff = totalBytesSent - lastBytesSent;
+        const bitrate = (bytesDiff * 8) / timeDiff / 1000; // kbps
+
+        if (bitrate > 0) {
+          bitrateEl.textContent = Math.round(bitrate) + 'k';
+        }
+      }
+
+      lastBytesSent = totalBytesSent;
+      lastBitrateTime = now;
+    }
+
+    function updateVisualizer() {
+      if (!analyser || !isBroadcasting) {
+        bars.forEach(bar => bar.style.height = '10px');
+        return;
+      }
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+
+      const step = Math.floor(dataArray.length / bars.length);
+
+      bars.forEach((bar, i) => {
+        const value = dataArray[i * step];
+        const height = Math.max(10, (value / 255) * 60);
+        bar.style.height = height + 'px';
+      });
+
+      requestAnimationFrame(updateVisualizer);
+    }
+
+    async function getAudioStream() {
+      const constraints = {
+        audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+      };
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    }
+
+    async function toggleBroadcast() {
+      if (isBroadcasting) {
+        stopBroadcast();
+      } else {
+        await startBroadcast();
+      }
+    }
+
+    async function startBroadcast() {
+      hideError();
+      broadcastButton.disabled = true;
+      updateStatus('Starting...');
+
+      try {
+        await ensureIceConfig();
+
+        if (sourceMode === 'local') {
+          // Capture the local machine's microphone immediately
+          localStream = await getAudioStream();
+          setupAnalyser(localStream);
+        } else {
+          // Remote mode: audio arrives from the translator's browser later.
+          // We register as broadcaster and wait for the translator to connect.
+          localStream = null;
+          remoteStream = null;
+          pendingListeners = [];
+          updateTranslatorStatus('waiting', 'Waiting for translator to connect…');
+        }
+
+        // When loaded via file://, connect to localhost; otherwise use current host
+        const wsHost = window.location.protocol === 'file:'
+          ? 'localhost:3000'
+          : window.location.host;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${wsHost}`);
+
+        ws.onopen = () => {
+          updateStatus('Connected', true, false);
+          ws.send(JSON.stringify({ type: 'register-broadcaster' }));
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            await handleSignalingMessage(data);
+          } catch (e) {
+            console.error('Error handling message:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket closed');
+          if (isBroadcasting) {
+            stopBroadcast();
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          showError('Connection failed. Make sure the server is running.');
+          stopBroadcast();
+        };
+
+      } catch (error) {
+        console.error('Start broadcast error:', error);
+        showError('Failed to start: ' + error.message);
+        stopBroadcast();
+      }
+    }
+
+    async function handleSignalingMessage(data) {
+      switch (data.type) {
+        case 'broadcaster-registered':
+          isBroadcasting = true;
+          broadcastStartTime = Date.now();
+          durationInterval = setInterval(updateDuration, 1000);
+          bitrateInterval = setInterval(updateBitrate, 1000);
+          lastBytesSent = 0;
+          lastBitrateTime = 0;
+          updateStatus(sourceMode === 'remote' ? 'Broadcasting (waiting for translator)' : 'Broadcasting', true, true);
+          broadcastButton.disabled = false;
+          broadcastButton.className = 'broadcast-button stop';
+          broadcastIcon.textContent = '⏹';
+          broadcastText.textContent = 'Stop Broadcasting';
+          setSourceButtonsEnabled(false);
+          updateVisualizer();
+          break;
+
+        // A remote translator is available; it will send us an offer shortly
+        case 'source-available':
+          if (sourceMode === 'remote') {
+            updateTranslatorStatus('waiting', 'Translator connecting…');
+          }
+          break;
+
+        // Translator sent an SDP offer for its audio stream
+        case 'source-offer':
+          await handleSourceOffer(data.sdp);
+          break;
+
+        // ICE candidate from the translator leg
+        case 'source-ice':
+          if (sourcePc && data.candidate) {
+            if (data.candidate.candidate && data.candidate.candidate.includes('.local')) break;
+            try {
+              await sourcePc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('Error adding source ICE candidate:', e);
+            }
+          }
+          break;
+
+        // Translator muted / unmuted their microphone
+        case 'source-status':
+          if (remoteStream) {
+            if (data.muted) {
+              updateTranslatorStatus('muted', 'Translator connected — muted');
+            } else {
+              updateTranslatorStatus('connected', 'Translator connected — live');
+            }
+          }
+          break;
+
+        // Translator disconnected
+        case 'source-gone':
+          handleSourceGone();
+          break;
+
+        case 'broadcaster-rejected':
+          showError('Another broadcaster is already active.');
+          stopBroadcast();
+          break;
+
+        case 'listener-joined':
+          await createPeerConnectionForListener(data.listenerId);
+          break;
+
+        case 'listener-left':
+          pendingListeners = pendingListeners.filter(id => id !== data.listenerId);
+          const pc = peerConnections.get(data.listenerId);
+          if (pc) {
+            if (pc.clonedStream) {
+              pc.clonedStream.getTracks().forEach(t => t.stop());
+            }
+            pc.close();
+            peerConnections.delete(data.listenerId);
+          }
+          break;
+
+        case 'answer':
+          const peerConn = peerConnections.get(data.listenerId);
+          if (peerConn) {
+            await peerConn.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          }
+          break;
+
+        case 'ice-candidate':
+          const pc2 = peerConnections.get(data.listenerId);
+          if (pc2 && data.candidate) {
+            // Filter out mDNS (.local) candidates - they cause resolution errors
+            if (data.candidate.candidate && data.candidate.candidate.includes('.local')) {
+              console.log('Skipping incoming mDNS candidate:', data.candidate.candidate);
+              break;
+            }
+            try {
+              await pc2.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+              console.error('Error adding ICE candidate:', e);
+            }
+          }
+          break;
+
+        case 'clients':
+          sidebarListenerCount.textContent = data.count;
+          if (data.list) {
+            updateClientList(data.list);
+          }
+          break;
+      }
+    }
+
+    async function createPeerConnectionForListener(listenerId) {
+      // In remote mode a listener may join before the translator's audio is
+      // available. Queue them and connect once we have a source stream.
+      if (!localStream || localStream.getAudioTracks().length === 0) {
+        if (!pendingListeners.includes(listenerId)) {
+          pendingListeners.push(listenerId);
+        }
+        return;
+      }
+
+      const pc = new RTCPeerConnection({ iceServers });
+
+      peerConnections.set(listenerId, pc);
+
+      const clonedStream = new MediaStream();
+      localStream.getAudioTracks().forEach(track => {
+        const clonedTrack = track.clone();
+        clonedStream.addTrack(clonedTrack);
+        const sender = pc.addTrack(clonedTrack, clonedStream);
+        if (!pc.audioSender) pc.audioSender = sender;
+      });
+
+      pc.clonedStream = clonedStream;
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          // Filter out mDNS (.local) candidates - they cause resolution errors
+          // and won't work across different networks anyway
+          if (event.candidate.candidate && event.candidate.candidate.includes('.local')) {
+            console.log('Skipping mDNS candidate:', event.candidate.candidate);
+            return;
+          }
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            listenerId: listenerId,
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`Listener ${listenerId} connection state: ${pc.connectionState}`);
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          peerConnections.delete(listenerId);
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.send(JSON.stringify({
+        type: 'offer',
+        listenerId: listenerId,
+        sdp: pc.localDescription
+      }));
+    }
+
+    // Receive the translator's audio stream and make it the broadcast source
+    async function handleSourceOffer(sdp) {
+      try {
+        if (!sourcePc) {
+          sourcePc = new RTCPeerConnection({ iceServers });
+
+          sourcePc.onicecandidate = (event) => {
+            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+              if (event.candidate.candidate && event.candidate.candidate.includes('.local')) return;
+              ws.send(JSON.stringify({ type: 'source-ice', candidate: event.candidate }));
+            }
+          };
+
+          sourcePc.ontrack = (event) => {
+            remoteStream = event.streams[0] || new MediaStream([event.track]);
+            localStream = remoteStream; // this becomes what we forward to listeners
+            setupAnalyser(remoteStream);
+            updateTranslatorStatus('connected', 'Translator connected — live');
+            updateStatus('Broadcasting', true, true);
+            updateVisualizer();
+
+            // Connect any listeners that were queued waiting for a source...
+            flushPendingListeners();
+            // ...and swap the live track into any listeners already connected
+            // (e.g. after the translator dropped and reconnected).
+            updateListenerTracks();
+          };
+
+          sourcePc.onconnectionstatechange = () => {
+            console.log(`Source connection state: ${sourcePc.connectionState}`);
+          };
+        }
+
+        await sourcePc.setRemoteDescription(new RTCSessionDescription(sdp));
+        const answer = await sourcePc.createAnswer();
+        await sourcePc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'source-answer', sdp: sourcePc.localDescription }));
+      } catch (e) {
+        console.error('Error handling source offer:', e);
+      }
+    }
+
+    // Connect any listeners that were waiting for a source stream
+    function flushPendingListeners() {
+      const waiting = pendingListeners.slice();
+      pendingListeners = [];
+      waiting.forEach(id => createPeerConnectionForListener(id));
+    }
+
+    // Replace the outgoing audio track on every listener (used when the
+    // translator reconnects) without renegotiating each connection.
+    function updateListenerTracks() {
+      const srcTrack = localStream && localStream.getAudioTracks()[0];
+      if (!srcTrack) return;
+      peerConnections.forEach(pc => {
+        if (pc.audioSender) {
+          const clone = srcTrack.clone();
+          try {
+            pc.audioSender.replaceTrack(clone);
+            if (pc.clonedStream) pc.clonedStream.getTracks().forEach(t => t.stop());
+            const newStream = new MediaStream([clone]);
+            pc.clonedStream = newStream;
+          } catch (e) {
+            console.error('Error replacing listener track:', e);
+          }
+        }
+      });
+    }
+
+    // The translator disconnected — pause audio but keep the broadcast alive
+    function handleSourceGone() {
+      updateTranslatorStatus('waiting', 'Translator disconnected — waiting to reconnect…');
+      if (sourcePc) {
+        try { sourcePc.close(); } catch (e) {}
+        sourcePc = null;
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(t => t.stop());
+        remoteStream = null;
+      }
+      // Keep localStream referencing the (now ended) tracks so new listeners are
+      // still wired up; audio resumes via replaceTrack when a translator returns.
+      if (isBroadcasting) {
+        updateStatus('Broadcasting (waiting for translator)', true, true);
+      }
+    }
+
+    function stopBroadcast() {
+      isBroadcasting = false;
+      broadcastStartTime = null;
+
+      if (durationInterval) {
+        clearInterval(durationInterval);
+        durationInterval = null;
+      }
+
+      if (bitrateInterval) {
+        clearInterval(bitrateInterval);
+        bitrateInterval = null;
+      }
+
+      peerConnections.forEach(pc => {
+        if (pc.clonedStream) {
+          pc.clonedStream.getTracks().forEach(t => t.stop());
+        }
+        pc.close();
+      });
+      peerConnections.clear();
+
+      // Tear down the remote translator connection, if any
+      if (sourcePc) {
+        try { sourcePc.close(); } catch (e) {}
+        sourcePc = null;
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(t => t.stop());
+        remoteStream = null;
+      }
+      pendingListeners = [];
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+        analyser = null;
+      }
+
+      setSourceButtonsEnabled(true);
+      updateTranslatorStatus('waiting', 'Translator not connected');
+      updateStatus('Not Broadcasting');
+      broadcastButton.disabled = false;
+      broadcastButton.className = 'broadcast-button start';
+      broadcastIcon.textContent = '📡';
+      broadcastText.textContent = 'Start Broadcasting';
+      durationEl.textContent = '0:00';
+      bitrateEl.textContent = '--';
+      // Don't clear client list - dashboard WebSocket keeps it updated
+
+      bars.forEach(bar => bar.style.height = '10px');
+    }
+
+    // Listener URL elements
+    const listenerUrlEl = document.getElementById('listenerUrl');
+    const copyUrlBtn = document.getElementById('copyUrlBtn');
+    const translatorUrlEl = document.getElementById('translatorUrl');
+    const copyTranslatorBtn = document.getElementById('copyTranslatorBtn');
+    let currentListenerUrl = '';
+    let currentTranslatorUrl = '';
+
+    // Fetch listener + translator URLs from server
+    function fetchListenerUrl() {
+      const apiBase = window.location.protocol === 'file:'
+        ? 'http://localhost:3000'
+        : '';
+
+      fetch(`${apiBase}/api/status`)
+        .then(r => r.json())
+        .then(data => {
+          sidebarListenerCount.textContent = data.listeners || 0;
+          if (data.listenerUrls && data.listenerUrls.length > 0) {
+            currentListenerUrl = data.listenerUrls[0];
+            listenerUrlEl.textContent = currentListenerUrl;
+            listenerUrlEl.title = currentListenerUrl;
+          } else {
+            listenerUrlEl.textContent = 'http://localhost:3000';
+            currentListenerUrl = 'http://localhost:3000';
+          }
+
+          if (data.translatorUrls && data.translatorUrls.length > 0) {
+            currentTranslatorUrl = data.translatorUrls[0];
+          } else {
+            currentTranslatorUrl = (currentListenerUrl || 'http://localhost:3000') + '/translate';
+          }
+          translatorUrlEl.textContent = currentTranslatorUrl;
+          translatorUrlEl.title = currentTranslatorUrl;
+        })
+        .catch(() => {
+          listenerUrlEl.textContent = 'Server not running';
+          translatorUrlEl.textContent = 'Server not running';
+        });
+    }
+
+    // Copy translator URL to clipboard
+    copyTranslatorBtn.addEventListener('click', async () => {
+      if (!currentTranslatorUrl) return;
+      try {
+        await navigator.clipboard.writeText(currentTranslatorUrl);
+        copyTranslatorBtn.textContent = 'Copied!';
+        copyTranslatorBtn.classList.add('copied');
+        setTimeout(() => {
+          copyTranslatorBtn.textContent = 'Copy';
+          copyTranslatorBtn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    });
+
+    // Copy URL to clipboard
+    copyUrlBtn.addEventListener('click', async () => {
+      if (!currentListenerUrl) return;
+
+      try {
+        await navigator.clipboard.writeText(currentListenerUrl);
+        copyUrlBtn.textContent = 'Copied!';
+        copyUrlBtn.classList.add('copied');
+        setTimeout(() => {
+          copyUrlBtn.textContent = 'Copy';
+          copyUrlBtn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
+    });
+
+    // Connect dashboard WebSocket to receive client list updates
+    function connectDashboard() {
+      if (dashboardWs && dashboardWs.readyState === WebSocket.OPEN) return;
+
+      const wsHost = window.location.protocol === 'file:'
+        ? 'localhost:3000'
+        : window.location.host;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      dashboardWs = new WebSocket(`${protocol}//${wsHost}`);
+
+      dashboardWs.onopen = () => {
+        console.log('Dashboard WebSocket connected');
+        dashboardWs.send(JSON.stringify({ type: 'register-dashboard' }));
+      };
+
+      dashboardWs.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'clients') {
+            sidebarListenerCount.textContent = data.count;
+            if (data.list) {
+              updateClientList(data.list);
+            }
+          }
+        } catch (e) {
+          console.error('Dashboard message error:', e);
+        }
+      };
+
+      dashboardWs.onclose = () => {
+        console.log('Dashboard WebSocket closed, reconnecting...');
+        setTimeout(connectDashboard, 3000);
+      };
+
+      dashboardWs.onerror = (error) => {
+        console.error('Dashboard WebSocket error:', error);
+      };
+    }
+
+    // --- Network sharing (mDNS) settings ---
+    const API_BASE = window.location.protocol === 'file:'
+      ? 'http://localhost:3000'
+      : '';
+    const mdnsEnabledEl = document.getElementById('mdnsEnabled');
+    const mdnsHostnameEl = document.getElementById('mdnsHostname');
+    const mdnsInterfaceEl = document.getElementById('mdnsInterface');
+    const mdnsOptionsEl = document.getElementById('mdnsOptions');
+    const mdnsHintEl = document.getElementById('mdnsHint');
+    let mdnsDefaultHostname = 'audiocaster';
+    let saveTimer = null;
+
+    // Mirror the server-side hostname sanitization so the hint previews the
+    // actual name that will be advertised.
+    function sanitizeHostname(name) {
+      return String(name || '')
+        .toLowerCase()
+        .replace(/\.local\.?$/, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 63);
+    }
+
+    function updateMdnsHint() {
+      if (!mdnsEnabledEl.checked) {
+        mdnsHintEl.textContent = 'Only IP addresses will be shared.';
+        return;
+      }
+      const label = sanitizeHostname(mdnsHostnameEl.value) || mdnsDefaultHostname;
+      mdnsHintEl.textContent = `Shared as: ${label}.local (IP addresses remain as a fallback)`;
+    }
+
+    function reflectMdnsEnabled() {
+      mdnsOptionsEl.classList.toggle('hidden', !mdnsEnabledEl.checked);
+      updateMdnsHint();
+    }
+
+    // Populate the form from the server's stored settings + interface list.
+    function loadNetworkSettings() {
+      fetch(`${API_BASE}/api/settings`)
+        .then(r => r.json())
+        .then(data => {
+          mdnsDefaultHostname = data.defaultHostname || 'audiocaster';
+          const cfg = data.mdns || {};
+          mdnsEnabledEl.checked = cfg.enabled !== false;
+          mdnsHostnameEl.value = cfg.hostname || '';
+          mdnsHostnameEl.placeholder = mdnsDefaultHostname;
+
+          // Rebuild the interface dropdown, keeping the "all" option first.
+          mdnsInterfaceEl.innerHTML = '<option value="">All network interfaces</option>';
+          for (const iface of data.interfaces || []) {
+            const opt = document.createElement('option');
+            opt.value = iface.name;
+            opt.textContent = `${iface.name} (${iface.address})`;
+            mdnsInterfaceEl.appendChild(opt);
+          }
+          mdnsInterfaceEl.value = cfg.interface || '';
+
+          reflectMdnsEnabled();
+        })
+        .catch(() => {
+          mdnsHintEl.textContent = 'Server not running';
+        });
+    }
+
+    // Persist the current form values, then refresh the shared URLs.
+    function saveNetworkSettings() {
+      const payload = {
+        mdns: {
+          enabled: mdnsEnabledEl.checked,
+          hostname: mdnsHostnameEl.value,
+          interface: mdnsInterfaceEl.value,
+        },
+      };
+      fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(r => r.json())
+        .then(() => fetchListenerUrl())
+        .catch(err => console.error('Failed to save network settings:', err));
+    }
+
+    mdnsEnabledEl.addEventListener('change', () => {
+      reflectMdnsEnabled();
+      saveNetworkSettings();
+    });
+    mdnsInterfaceEl.addEventListener('change', saveNetworkSettings);
+    mdnsHostnameEl.addEventListener('input', () => {
+      updateMdnsHint();
+      // Debounce so we don't restart the responder on every keystroke.
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNetworkSettings, 600);
+    });
+
+    // Initial setup
+    fetchListenerUrl();
+    loadNetworkSettings();
+    connectDashboard();
+  </script>
+</body>
+</html>
