@@ -1,6 +1,6 @@
 {
   "name": "audio-broadcaster",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Real-time audio broadcasting application",
   "main": "main.js",
   "scripts": {
