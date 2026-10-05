@@ -5,14 +5,23 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const mdns = require('./mdns');
+const settingsStore = require('./settings');
+
+// Persisted user settings (mDNS / friendly-name config). Loaded once here and
+// re-applied whenever the UI changes them via POST /api/settings.
+let settings = settingsStore.load();
 
 // Configuration
 const CONFIG = {
-  port: process.env.PORT || 3000,
+  // An explicit env var wins; otherwise fall back to the saved setting (editable
+  // from the UI), then the built-in default. This lets a user move off a port
+  // that's already in use without touching env vars.
+  port: Number(process.env.PORT) || settings.server.httpPort,
   // Separate port for the HTTPS listener (only used when SSL is enabled). Kept
   // distinct from the HTTP port so the in-app broadcaster can keep talking plain
   // HTTP on localhost while remote devices use HTTPS.
-  httpsPort: process.env.HTTPS_PORT || 3443,
+  httpsPort: Number(process.env.HTTPS_PORT) || settings.server.httpsPort,
   // Optional TURN server for relaying audio when peers can't connect directly
   // (e.g. the translator is on cellular / a different network than the listeners).
   // Leave unset to use STUN only, which is enough on a shared local network.
@@ -70,6 +79,15 @@ function getTlsOptions() {
     { type: 7, ip: '127.0.0.1' },
     ...getLocalIPs().map(ip => ({ type: 7, ip })),
   ];
+  // Also cover the mDNS friendly name (type 2 = DNS) so the translator can open
+  // https://<name>.local without an extra cert-name mismatch on top of the
+  // self-signed warning. The cert is minted once at startup, so a hostname
+  // changed later at runtime won't be covered — the browser's "proceed anyway"
+  // flow still works in that case.
+  if (settings.mdns && settings.mdns.enabled) {
+    const label = mdns.sanitizeHostname(settings.mdns.hostname) || mdns.defaultHostname();
+    altNames.push({ type: 2, value: `${label}.local` });
+  }
   const pems = selfsigned.generate(
     [{ name: 'commonName', value: 'localhost' }],
     { days: 365, keySize: 2048, algorithm: 'sha256', extensions: [{ name: 'subjectAltName', altNames }] }
@@ -103,8 +121,15 @@ const TRANSLATOR_PORT = USE_HTTPS ? CONFIG.httpsPort : CONFIG.port;
 // each other through the one server.
 const wss = new WebSocket.Server({ server: httpServer });
 wss.on('connection', handleConnection);
+// ws forwards the underlying server's 'error' (e.g. EADDRINUSE on listen) to the
+// WebSocket.Server instance; without a listener here that would throw as an
+// unhandled 'error' event. Swallow it — handleListenError on the HTTP(S) server
+// already reports it to the user.
+wss.on('error', () => {});
 if (httpsServer) {
-  new WebSocket.Server({ server: httpsServer }).on('connection', handleConnection);
+  const wssSecure = new WebSocket.Server({ server: httpsServer });
+  wssSecure.on('connection', handleConnection);
+  wssSecure.on('error', () => {});
 }
 
 // Track broadcaster, dashboard, source (remote translator), and clients
@@ -116,6 +141,17 @@ let clientIdCounter = 0;
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Allow the Electron window (loaded over file://, origin "null") and any device
+// on the LAN to call the JSON API. This also answers the CORS preflight that a
+// POST with a JSON body triggers from the file:// origin.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 // Get local IP addresses for display
 function getLocalIPs() {
@@ -133,9 +169,37 @@ function getLocalIPs() {
   return addresses;
 }
 
+// Order IPs so the selected interface's address(es) come first, keeping the rest
+// as fallback. When no interface is selected the original order is preserved.
+function orderedIPs() {
+  const ips = getLocalIPs();
+  const selected = settings.mdns && settings.mdns.interface;
+  if (!selected) return ips;
+  const selectedIPs = mdns.listInterfaces()
+    .filter(i => i.name === selected)
+    .map(i => i.address);
+  const rest = ips.filter(ip => !selectedIPs.includes(ip));
+  return [...selectedIPs.filter(ip => ips.includes(ip)), ...rest];
+}
+
 // API endpoint for server status
 app.get('/api/status', (req, res) => {
-  const ips = getLocalIPs();
+  const ips = orderedIPs();
+  const mdnsState = mdns.getState();
+
+  // Build the shareable URL lists. When mDNS is active the friendly "<name>.local"
+  // URL goes first, but every IP URL is always included afterwards as a fallback.
+  const listenerUrls = [];
+  const translatorUrls = [];
+  if (mdnsState.enabled && mdnsState.fqdn) {
+    listenerUrls.push(`http://${mdnsState.fqdn}:${CONFIG.port}`);
+    translatorUrls.push(`${TRANSLATOR_PROTOCOL}://${mdnsState.fqdn}:${TRANSLATOR_PORT}/translate`);
+  }
+  for (const ip of ips) {
+    listenerUrls.push(`http://${ip}:${CONFIG.port}`);
+    translatorUrls.push(`${TRANSLATOR_PROTOCOL}://${ip}:${TRANSLATOR_PORT}/translate`);
+  }
+
   // Listeners stay on plain HTTP (no mic needed). The translator uses HTTPS when
   // enabled, since its microphone requires a secure context.
   res.json({
@@ -144,8 +208,57 @@ app.get('/api/status', (req, res) => {
     sourceConnected: source !== null,
     uptime: process.uptime(),
     secure: USE_HTTPS,
-    listenerUrls: ips.map(ip => `http://${ip}:${CONFIG.port}`),
-    translatorUrls: ips.map(ip => `${TRANSLATOR_PROTOCOL}://${ip}:${TRANSLATOR_PORT}/translate`),
+    mdns: {
+      enabled: mdnsState.enabled,
+      hostname: mdnsState.hostname,
+      fqdn: mdnsState.fqdn,
+    },
+    listenerUrls,
+    translatorUrls,
+  });
+});
+
+// List network settings: the stored mDNS config plus the available interfaces
+// (so the UI can offer an interface picker).
+app.get('/api/settings', (req, res) => {
+  res.json({
+    mdns: settings.mdns,
+    // Saved ports plus the ports actually in use this run. They differ when a
+    // PORT / HTTPS_PORT env var overrides the saved value, or until the app is
+    // restarted after a change (ports only take effect at startup).
+    server: settings.server,
+    activePorts: { httpPort: CONFIG.port, httpsPort: CONFIG.httpsPort },
+    defaultHostname: mdns.defaultHostname(),
+    interfaces: mdns.listInterfaces(),
+  });
+});
+
+// Update the mDNS config, persist it, and re-apply the responder immediately.
+app.post('/api/settings', express.json(), (req, res) => {
+  const incoming = (req.body && req.body.mdns) || {};
+  const next = { ...settings.mdns };
+  if (typeof incoming.enabled === 'boolean') next.enabled = incoming.enabled;
+  if (typeof incoming.hostname === 'string') next.hostname = incoming.hostname;
+  if (typeof incoming.interface === 'string') next.interface = incoming.interface;
+
+  // Port changes are persisted but only take effect on the next startup (the
+  // listeners are already bound), so we don't re-listen here — just save and let
+  // the UI tell the user to restart. settings.js validates/clamps the values.
+  const incomingServer = (req.body && req.body.server) || {};
+  const nextServer = { ...settings.server };
+  if (incomingServer.httpPort != null) nextServer.httpPort = incomingServer.httpPort;
+  if (incomingServer.httpsPort != null) nextServer.httpsPort = incomingServer.httpsPort;
+
+  settings = settingsStore.save({ mdns: next, server: nextServer });
+  const state = mdns.apply(settings.mdns);
+
+  res.json({
+    mdns: settings.mdns,
+    server: settings.server,
+    activePorts: { httpPort: CONFIG.port, httpsPort: CONFIG.httpsPort },
+    state: { enabled: state.enabled, hostname: state.hostname, fqdn: state.fqdn },
+    defaultHostname: mdns.defaultHostname(),
+    interfaces: mdns.listInterfaces(),
   });
 });
 
@@ -460,6 +573,13 @@ function logStartup() {
   console.log(`   Listeners:   http://localhost:${CONFIG.port}/`);
   console.log(`   Translator:  http://localhost:${CONFIG.port}/translate`);
 
+  const mdnsState = mdns.getState();
+  if (mdnsState.enabled && mdnsState.fqdn) {
+    console.log(`\n📛 Friendly name (mDNS): http://${mdnsState.fqdn}:${CONFIG.port}/`);
+    console.log(`   Translator: ${TRANSLATOR_PROTOCOL}://${mdnsState.fqdn}:${TRANSLATOR_PORT}/translate`);
+    console.log('   (falls back to the IP addresses below on devices without mDNS)');
+  }
+
   console.log(`\n📱 From other devices on the network (use these):`);
   if (localIPs.length === 0) {
     console.log('   (no LAN IP detected)');
@@ -486,6 +606,36 @@ function logStartup() {
   console.log('Waiting for broadcaster...\n');
 }
 
+// Bring up the mDNS responder with the persisted settings before we start
+// listening, so the friendly name is advertised as soon as the server is up.
+mdns.apply(settings.mdns);
+
+// Turn a failed listen (most commonly EADDRINUSE — the port is already taken by
+// another program or a leftover copy of this app) into a clear, actionable
+// message instead of an unhandled exception / stack trace. Inside the Electron
+// app we also pop a dialog, since there's no console for the user to read.
+function handleListenError(label, port) {
+  return (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      const msg = `${label} port ${port} is already in use.\n\n`
+        + 'Another program — or another copy of this app — is using it. '
+        + 'Open Settings to choose a different port, or close the other program, '
+        + 'then restart the app.';
+      console.error(`\n❌ ${msg}\n`);
+      if (process.versions.electron) {
+        try {
+          require('electron').dialog.showErrorBox('Port already in use', msg);
+        } catch (e) { /* dialog unavailable — the console message above still stands */ }
+      }
+    } else {
+      console.error(`${label} server error:`, err ? err.message : err);
+    }
+  };
+}
+
+httpServer.on('error', handleListenError('HTTP', CONFIG.port));
+if (httpsServer) httpsServer.on('error', handleListenError('HTTPS', CONFIG.httpsPort));
+
 httpServer.listen(CONFIG.port, logStartup);
 if (httpsServer) httpsServer.listen(CONFIG.httpsPort);
 
@@ -505,6 +655,8 @@ process.on('SIGINT', () => {
   if (source) {
     source.close();
   }
+
+  mdns.stop();
 
   if (httpsServer) {
     try { httpsServer.close(); } catch (e) {}

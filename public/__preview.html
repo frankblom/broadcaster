@@ -169,32 +169,39 @@
       color: #fff;
     }
 
-    /* Main card header (title + settings button) */
-    .main-card-header {
+    /* Network sharing (mDNS) settings */
+    .mdns-settings {
+      margin-bottom: 20px;
+    }
+
+    .mdns-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .main-card-header h1 {
-      font-size: 22px;
-      font-weight: 600;
-    }
-
-    .settings-btn {
-      padding: 8px 14px;
+      margin-bottom: 14px;
       font-size: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
+      color: rgba(255, 255, 255, 0.85);
       cursor: pointer;
     }
 
-    .settings-btn:hover {
-      background: rgba(255, 255, 255, 0.16);
+    .mdns-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #ff6b6b;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .mdns-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin: -10px 0 12px;
+      word-break: break-all;
+    }
+
+    #mdnsOptions.hidden {
+      display: none;
     }
 
     /* Audio source toggle */
@@ -518,11 +525,6 @@
     <div class="main-panel">
       <!-- Stats & Settings -->
       <div class="card">
-        <div class="main-card-header">
-          <h1>Broadcaster</h1>
-          <button class="settings-btn" id="settingsBtn" title="Settings">⚙ Settings</button>
-        </div>
-
         <div class="error-message" id="error"></div>
 
         <div class="stats-grid">
@@ -571,6 +573,23 @@
           <span id="broadcastText">Start Broadcasting</span>
         </button>
 
+        <div class="section-label">Network sharing</div>
+        <div class="mdns-settings">
+          <label class="mdns-row" for="mdnsEnabled">
+            <span>Share a friendly name (mDNS)</span>
+            <input type="checkbox" id="mdnsEnabled">
+          </label>
+          <div id="mdnsOptions">
+            <input type="text" class="device-select visible" id="mdnsHostname"
+                   placeholder="audiocaster" autocomplete="off" spellcheck="false"
+                   style="cursor: text; margin-bottom: 10px;">
+            <div class="mdns-hint" id="mdnsHint"></div>
+            <select class="device-select visible" id="mdnsInterface">
+              <option value="">All network interfaces</option>
+            </select>
+          </div>
+        </div>
+
         <div class="listener-url-box">
           <div class="listener-url-label">Listener URL</div>
           <div class="listener-url-container">
@@ -605,14 +624,6 @@
   </div>
 
   <script>
-    // When running inside the Electron app, this page loads over file:// and talks
-    // to its own local server over plain HTTP on localhost. The HTTP port is
-    // configurable (Settings → Server ports) and passed in by the Electron main
-    // process via ?httpPort=; it falls back to the default when not provided.
-    const LOCAL_HTTP_PORT = new URLSearchParams(window.location.search).get('httpPort') || '3000';
-    const LOCAL_HTTP_HOST = `localhost:${LOCAL_HTTP_PORT}`;
-    const LOCAL_HTTP_ORIGIN = `http://${LOCAL_HTTP_HOST}`;
-
     // State
     let dashboardWs = null; // WebSocket for receiving client list (always connected)
     let ws = null; // WebSocket for broadcasting (only when broadcasting)
@@ -734,7 +745,7 @@
     // Fetch ICE server config (STUN + optional TURN) from the server
     async function ensureIceConfig() {
       try {
-        const apiBase = window.location.protocol === 'file:' ? LOCAL_HTTP_ORIGIN : '';
+        const apiBase = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
         const res = await fetch(`${apiBase}/api/ice`);
         const data = await res.json();
         if (data.iceServers && data.iceServers.length > 0) {
@@ -917,7 +928,7 @@
 
         // When loaded via file://, connect to localhost; otherwise use current host
         const wsHost = window.location.protocol === 'file:'
-          ? LOCAL_HTTP_HOST
+          ? 'localhost:3000'
           : window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${wsHost}`);
@@ -1285,7 +1296,7 @@
     // Fetch listener + translator URLs from server
     function fetchListenerUrl() {
       const apiBase = window.location.protocol === 'file:'
-        ? LOCAL_HTTP_ORIGIN
+        ? 'http://localhost:3000'
         : '';
 
       fetch(`${apiBase}/api/status`)
@@ -1297,14 +1308,14 @@
             listenerUrlEl.textContent = currentListenerUrl;
             listenerUrlEl.title = currentListenerUrl;
           } else {
-            listenerUrlEl.textContent = LOCAL_HTTP_ORIGIN;
-            currentListenerUrl = LOCAL_HTTP_ORIGIN;
+            listenerUrlEl.textContent = 'http://localhost:3000';
+            currentListenerUrl = 'http://localhost:3000';
           }
 
           if (data.translatorUrls && data.translatorUrls.length > 0) {
             currentTranslatorUrl = data.translatorUrls[0];
           } else {
-            currentTranslatorUrl = (currentListenerUrl || LOCAL_HTTP_ORIGIN) + '/translate';
+            currentTranslatorUrl = (currentListenerUrl || 'http://localhost:3000') + '/translate';
           }
           translatorUrlEl.textContent = currentTranslatorUrl;
           translatorUrlEl.title = currentTranslatorUrl;
@@ -1353,7 +1364,7 @@
       if (dashboardWs && dashboardWs.readyState === WebSocket.OPEN) return;
 
       const wsHost = window.location.protocol === 'file:'
-        ? LOCAL_HTTP_HOST
+        ? 'localhost:3000'
         : window.location.host;
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       dashboardWs = new WebSocket(`${protocol}//${wsHost}`);
@@ -1387,31 +1398,105 @@
       };
     }
 
-    // API base: inside the Electron app (file://) talk to the local server over
-    // HTTP; when served over the network use the current origin. Used by the
-    // listener-URL fetch and the ICE config request above.
+    // --- Network sharing (mDNS) settings ---
     const API_BASE = window.location.protocol === 'file:'
-      ? LOCAL_HTTP_ORIGIN
+      ? 'http://localhost:3000'
       : '';
+    const mdnsEnabledEl = document.getElementById('mdnsEnabled');
+    const mdnsHostnameEl = document.getElementById('mdnsHostname');
+    const mdnsInterfaceEl = document.getElementById('mdnsInterface');
+    const mdnsOptionsEl = document.getElementById('mdnsOptions');
+    const mdnsHintEl = document.getElementById('mdnsHint');
+    let mdnsDefaultHostname = 'audiocaster';
+    let saveTimer = null;
 
-    // --- Settings ---
-    // All adjustable options (mDNS / friendly name, server ports) now live in a
-    // separate Settings window, opened from the ⚙ Settings button or the app's
-    // Settings menu (Cmd+,). When that window closes the main process fires
-    // 'settings-changed', so we refresh the shared URLs that an mDNS change
-    // affects.
-    const settingsBtn = document.getElementById('settingsBtn');
-    if (window.electronAPI) {
-      settingsBtn.addEventListener('click', () => window.electronAPI.openSettings());
-      window.electronAPI.onSettingsChanged(() => fetchListenerUrl());
-    } else {
-      // Opened directly in a browser (not the Electron app) — there's no separate
-      // window to open, so hide the button.
-      settingsBtn.style.display = 'none';
+    // Mirror the server-side hostname sanitization so the hint previews the
+    // actual name that will be advertised.
+    function sanitizeHostname(name) {
+      return String(name || '')
+        .toLowerCase()
+        .replace(/\.local\.?$/, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 63);
     }
+
+    function updateMdnsHint() {
+      if (!mdnsEnabledEl.checked) {
+        mdnsHintEl.textContent = 'Only IP addresses will be shared.';
+        return;
+      }
+      const label = sanitizeHostname(mdnsHostnameEl.value) || mdnsDefaultHostname;
+      mdnsHintEl.textContent = `Shared as: ${label}.local (IP addresses remain as a fallback)`;
+    }
+
+    function reflectMdnsEnabled() {
+      mdnsOptionsEl.classList.toggle('hidden', !mdnsEnabledEl.checked);
+      updateMdnsHint();
+    }
+
+    // Populate the form from the server's stored settings + interface list.
+    function loadNetworkSettings() {
+      fetch(`${API_BASE}/api/settings`)
+        .then(r => r.json())
+        .then(data => {
+          mdnsDefaultHostname = data.defaultHostname || 'audiocaster';
+          const cfg = data.mdns || {};
+          mdnsEnabledEl.checked = cfg.enabled !== false;
+          mdnsHostnameEl.value = cfg.hostname || '';
+          mdnsHostnameEl.placeholder = mdnsDefaultHostname;
+
+          // Rebuild the interface dropdown, keeping the "all" option first.
+          mdnsInterfaceEl.innerHTML = '<option value="">All network interfaces</option>';
+          for (const iface of data.interfaces || []) {
+            const opt = document.createElement('option');
+            opt.value = iface.name;
+            opt.textContent = `${iface.name} (${iface.address})`;
+            mdnsInterfaceEl.appendChild(opt);
+          }
+          mdnsInterfaceEl.value = cfg.interface || '';
+
+          reflectMdnsEnabled();
+        })
+        .catch(() => {
+          mdnsHintEl.textContent = 'Server not running';
+        });
+    }
+
+    // Persist the current form values, then refresh the shared URLs.
+    function saveNetworkSettings() {
+      const payload = {
+        mdns: {
+          enabled: mdnsEnabledEl.checked,
+          hostname: mdnsHostnameEl.value,
+          interface: mdnsInterfaceEl.value,
+        },
+      };
+      fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(r => r.json())
+        .then(() => fetchListenerUrl())
+        .catch(err => console.error('Failed to save network settings:', err));
+    }
+
+    mdnsEnabledEl.addEventListener('change', () => {
+      reflectMdnsEnabled();
+      saveNetworkSettings();
+    });
+    mdnsInterfaceEl.addEventListener('change', saveNetworkSettings);
+    mdnsHostnameEl.addEventListener('input', () => {
+      updateMdnsHint();
+      // Debounce so we don't restart the responder on every keystroke.
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNetworkSettings, 600);
+    });
 
     // Initial setup
     fetchListenerUrl();
+    loadNetworkSettings();
     connectDashboard();
   </script>
 </body>

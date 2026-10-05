@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Broadcaster - Settings</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 24px;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .settings-header h1 {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .done-btn {
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      background: #ff6b6b;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .done-btn:hover {
+      background: #ff5252;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      margin-bottom: 20px;
+    }
+
+    .section-label {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      margin-bottom: 14px;
+    }
+
+    .device-select {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      cursor: pointer;
+      display: block;
+      margin-bottom: 20px;
+    }
+
+    .device-select option {
+      background: #1a1a2e;
+      color: #fff;
+    }
+
+    /* Network sharing (mDNS) settings */
+    .mdns-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+      cursor: pointer;
+    }
+
+    .mdns-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #ff6b6b;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .mdns-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin: -10px 0 12px;
+      word-break: break-all;
+    }
+
+    #mdnsOptions.hidden {
+      display: none;
+    }
+
+    /* Server port settings */
+    .port-field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .port-field input[type="number"] {
+      width: 100px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      font-size: 14px;
+      text-align: right;
+    }
+
+    .port-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 8px;
+      word-break: break-word;
+    }
+
+    .port-hint.warn {
+      color: #ffcf6b;
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-header">
+    <h1>Settings</h1>
+    <button class="done-btn" id="doneBtn">Done</button>
+  </div>
+
+  <div class="card">
+    <div class="section-label">Network sharing</div>
+    <label class="mdns-row" for="mdnsEnabled">
+      <span>Share a friendly name (mDNS)</span>
+      <input type="checkbox" id="mdnsEnabled">
+    </label>
+    <div id="mdnsOptions">
+      <input type="text" class="device-select" id="mdnsHostname"
+             placeholder="audiocaster" autocomplete="off" spellcheck="false"
+             style="cursor: text; margin-bottom: 10px;">
+      <div class="mdns-hint" id="mdnsHint"></div>
+      <select class="device-select" id="mdnsInterface">
+        <option value="">All network interfaces</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-label">Server ports</div>
+    <div class="port-field">
+      <label for="httpPort">HTTP port</label>
+      <input type="number" id="httpPort" min="1" max="65535" step="1" autocomplete="off">
+    </div>
+    <div class="port-field">
+      <label for="httpsPort">HTTPS port</label>
+      <input type="number" id="httpsPort" min="1" max="65535" step="1" autocomplete="off">
+    </div>
+    <div class="port-hint" id="portHint"></div>
+  </div>
+
+  <script>
+    // Loaded over file:// inside the Electron app; the HTTP port the local server
+    // uses is passed in via ?httpPort= (same value the main window gets), so the
+    // settings API calls reach the right localhost port.
+    const LOCAL_HTTP_PORT = new URLSearchParams(window.location.search).get('httpPort') || '3000';
+    const API_BASE = window.location.protocol === 'file:'
+      ? `http://localhost:${LOCAL_HTTP_PORT}`
+      : '';
+
+    const mdnsEnabledEl = document.getElementById('mdnsEnabled');
+    const mdnsHostnameEl = document.getElementById('mdnsHostname');
+    const mdnsInterfaceEl = document.getElementById('mdnsInterface');
+    const mdnsOptionsEl = document.getElementById('mdnsOptions');
+    const mdnsHintEl = document.getElementById('mdnsHint');
+    const httpPortEl = document.getElementById('httpPort');
+    const httpsPortEl = document.getElementById('httpsPort');
+    const portHintEl = document.getElementById('portHint');
+    let mdnsDefaultHostname = 'audiocaster';
+    let saveTimer = null;
+    let portSaveTimer = null;
+    let activePorts = null; // ports actually in use this run (from /api/settings)
+
+    // Mirror the server-side hostname sanitization so the hint previews the
+    // actual name that will be advertised.
+    function sanitizeHostname(name) {
+      return String(name || '')
+        .toLowerCase()
+        .replace(/\.local\.?$/, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 63);
+    }
+
+    function updateMdnsHint() {
+      if (!mdnsEnabledEl.checked) {
+        mdnsHintEl.textContent = 'Only IP addresses will be shared.';
+        return;
+      }
+      const label = sanitizeHostname(mdnsHostnameEl.value) || mdnsDefaultHostname;
+      mdnsHintEl.textContent = `Shared as: ${label}.local (IP addresses remain as a fallback)`;
+    }
+
+    function reflectMdnsEnabled() {
+      mdnsOptionsEl.classList.toggle('hidden', !mdnsEnabledEl.checked);
+      updateMdnsHint();
+    }
+
+    // Populate the form from the server's stored settings + interface list.
+    function loadSettings() {
+      fetch(`${API_BASE}/api/settings`)
+        .then(r => r.json())
+        .then(data => {
+          mdnsDefaultHostname = data.defaultHostname || 'audiocaster';
+          const cfg = data.mdns || {};
+          mdnsEnabledEl.checked = cfg.enabled !== false;
+          mdnsHostnameEl.value = cfg.hostname || '';
+          mdnsHostnameEl.placeholder = mdnsDefaultHostname;
+
+          // Rebuild the interface dropdown, keeping the "all" option first.
+          mdnsInterfaceEl.innerHTML = '<option value="">All network interfaces</option>';
+          for (const iface of data.interfaces || []) {
+            const opt = document.createElement('option');
+            opt.value = iface.name;
+            opt.textContent = `${iface.name} (${iface.address})`;
+            mdnsInterfaceEl.appendChild(opt);
+          }
+          mdnsInterfaceEl.value = cfg.interface || '';
+
+          const server = data.server || {};
+          httpPortEl.value = server.httpPort || '';
+          httpsPortEl.value = server.httpsPort || '';
+          activePorts = data.activePorts || null;
+          updatePortHint();
+
+          reflectMdnsEnabled();
+        })
+        .catch(() => {
+          mdnsHintEl.textContent = 'Server not running';
+        });
+    }
+
+    // Show whether the entered ports match the ones currently in use. They only
+    // take effect after a restart, so flag a mismatch to prompt one.
+    function updatePortHint() {
+      const http = Number(httpPortEl.value);
+      const https = Number(httpsPortEl.value);
+      const valid = (p) => Number.isInteger(p) && p >= 1 && p <= 65535;
+      if (!valid(http) || !valid(https)) {
+        portHintEl.textContent = 'Enter a port between 1 and 65535.';
+        portHintEl.classList.add('warn');
+        return;
+      }
+      if (activePorts && (http !== activePorts.httpPort || https !== activePorts.httpsPort)) {
+        portHintEl.textContent = 'Saved. Restart the app for the new ports to take effect.';
+        portHintEl.classList.add('warn');
+      } else {
+        portHintEl.textContent = 'Change these if a port is already in use. Takes effect on restart.';
+        portHintEl.classList.remove('warn');
+      }
+    }
+
+    // Persist the port values (debounced). Ports only apply on the next startup.
+    function savePortSettings() {
+      const http = Number(httpPortEl.value);
+      const https = Number(httpsPortEl.value);
+      const valid = (p) => Number.isInteger(p) && p >= 1 && p <= 65535;
+      if (!valid(http) || !valid(https)) return; // wait for a valid value
+      fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server: { httpPort: http, httpsPort: https } }),
+      })
+        .then(r => r.json())
+        .then(() => updatePortHint())
+        .catch(err => console.error('Failed to save port settings:', err));
+    }
+
+    // Persist the mDNS form values (applied live on the server).
+    function saveNetworkSettings() {
+      const payload = {
+        mdns: {
+          enabled: mdnsEnabledEl.checked,
+          hostname: mdnsHostnameEl.value,
+          interface: mdnsInterfaceEl.value,
+        },
+      };
+      fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(err => console.error('Failed to save network settings:', err));
+    }
+
+    mdnsEnabledEl.addEventListener('change', () => {
+      reflectMdnsEnabled();
+      saveNetworkSettings();
+    });
+    mdnsInterfaceEl.addEventListener('change', saveNetworkSettings);
+    mdnsHostnameEl.addEventListener('input', () => {
+      updateMdnsHint();
+      // Debounce so we don't restart the responder on every keystroke.
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNetworkSettings, 600);
+    });
+
+    [httpPortEl, httpsPortEl].forEach(el => {
+      el.addEventListener('input', () => {
+        updatePortHint();
+        // Debounce so we don't save on every keystroke while typing a port.
+        clearTimeout(portSaveTimer);
+        portSaveTimer = setTimeout(savePortSettings, 600);
+      });
+    });
+
+    document.getElementById('doneBtn').addEventListener('click', () => window.close());
+
+    loadSettings();
+  </script>
+</body>
+</html>
